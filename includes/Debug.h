@@ -6,7 +6,7 @@
 
 namespace EDA_CHALLENGE_Q4 {
 
-#define Assert(cond, ...)           \
+#define ASSERT(cond, ...)           \
   do {                              \
     if (!(cond)) {                  \
       fflush(stdout);               \
@@ -17,9 +17,9 @@ namespace EDA_CHALLENGE_Q4 {
     }                               \
   } while (0)
 
-#define panic(...) Assert(0, __VA_ARGS__)
+#define PANIC(...) ASSERT(0, __VA_ARGS__)
 
-#define TODO() panic("TO IMPLEMENT %s()\n", __func__)
+#define TODO() PANIC("TO IMPLEMENT %s()\n", __func__)
 
 }  // namespace EDA_CHALLENGE_Q4
 #endif

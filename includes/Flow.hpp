@@ -20,14 +20,14 @@ class Flow {
 
   // getter
   static Flow& getInstance(const int, char**);
-  FlowStepType getStep() const { return _step; }
-  int getArgc() const { return _argc; }
-  char** getArgv() const { return _argv; }
+  auto get_step() const { return _step; }
+  auto get_argc() const { return _argc; }
+  auto get_argv() const { return _argv; }
 
   // setter
-  void setStep(const FlowStepType step) { _step = step; }
-  void setArgc(const int argc) { _argc = argc; }
-  void setArgv(char** argv) { _argv = argv; }
+  void set_step(const FlowStepType step) { _step = step; }
+  void set_argc(const int argc) { _argc = argc; }
+  void set_argv(char** argv) { _argv = argv; }
 
   // function
   void doStepTask();
@@ -67,9 +67,9 @@ class Flow {
 inline Flow& Flow::getInstance(const int argc, char** argv) {
   static Flow singleton;
 
-  singleton.setStep(FlowStepType::kInit);
-  singleton.setArgc(argc);
-  singleton.setArgv(argv);
+  singleton.set_step(FlowStepType::kInit);
+  singleton.set_argc(argc);
+  singleton.set_argv(argv);
 
   return singleton;
 }

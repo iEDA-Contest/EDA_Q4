@@ -9,19 +9,19 @@ void Flow::doStepTask() {
   switch (_step) {
     case kInit:
       printf("\n----- EDA_CHALLENGE_Q4 -----\n");
-      setStep(kParseArgv);
+      set_step(kParseArgv);
       break;
     case kParseArgv:
       doTaskParseArgv();
-      setStep(kParseResources);
+      set_step(kParseResources);
       break;
     case kParseResources:
       doTaskParseResources();
-      setStep(kFloorplan);
+      set_step(kFloorplan);
       break;
     case kFloorplan:
       doTaskFloorplan();
-      setStep(kEnd);
+      set_step(kEnd);
       break;
     default:
       assert(0);

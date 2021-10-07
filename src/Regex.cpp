@@ -19,7 +19,7 @@ bool Regex::make_tokens(char* buff) {
 
         switch (rules[i].token_type) {
           case TK_NULL:
-            panic("\"%s\" should not match TK_NULL",
+            PANIC("\"%s\" should not match TK_NULL",
                   std::string(buff + position, pos_match.rm_so).c_str());
             break;
           case TK_SPACE:

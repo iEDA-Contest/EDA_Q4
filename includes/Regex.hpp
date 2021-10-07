@@ -72,7 +72,7 @@ inline Regex& Regex::getInstance() {
                   REG_EXTENDED | REG_NEWLINE);
     if (ret != 0) {
       regerror(ret, &singleton._regexs[i], error_msg, sizeof(error_msg));
-      panic("regex compilation failed: %s\n%s", error_msg,
+      PANIC("regex compilation failed: %s\n%s", error_msg,
             rules[i].regex.c_str());
     }
   }
