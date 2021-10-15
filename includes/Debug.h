@@ -1,6 +1,7 @@
 #ifndef __MACRO_H_
 #define __MACRO_H_
 
+#include <assert.h>
 #include <stdio.h>
 #include <stdlib.h>
 

@@ -1,7 +1,9 @@
 #ifndef __FLOW_HPP_
 #define __FLOW_HPP_
 
-#include "Regex.hpp"
+#include "CellManager.hpp"
+#include "ConfigManager.hpp"
+#include "ConstraintManager.hpp"
 
 namespace EDA_CHALLENGE_Q4 {
 
@@ -42,17 +44,18 @@ class Flow {
   void doTaskParseArgv();
   void doTaskParseResources();
   void doTaskFloorplan();
-  void parseConf();
-  void parseConstraint();
   void parseXml(char*);
 
-  // member variables
-  FlowStepType _step;      // flow step
-  int _argc;               // argc of main function
-  char** _argv;            // argv of main function
-  char* _config_file;      // configure.xml
-  char* _constraint_file;  // constraint.xml
-  Regex& _parser = Regex::getInstance();
+  // member
+  FlowStepType _step;                     // flow step
+  int _argc;                              // argc of main function
+  char** _argv;                           // argv of main function
+  char* _config_file;                     // configure.xml
+  char* _constraint_file;                 // constraint.xml
+  Regex& _parser = Regex::getInstance();  // xml parser
+  ConfigManager* _conf_man;
+  ConstraintManager* _constraint_man;
+  CellManager* _cell_man;
 };
 
 /**
@@ -72,6 +75,11 @@ inline Flow& Flow::getInstance(const int argc, char** argv) {
   singleton.set_argv(argv);
 
   return singleton;
+}
+
+inline void Flow::doTaskEnd() {
+  assert(_step == kEnd);
+  printf("\n----- EDA_CHALLENGE_Q4 END -----\n");
 }
 
 }  // namespace EDA_CHALLENGE_Q4

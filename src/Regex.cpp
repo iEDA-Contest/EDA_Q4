@@ -18,13 +18,17 @@ bool Regex::make_tokens(char* buff) {
         position += pos_match.rm_eo;
 
         switch (rules[i].token_type) {
-          case TK_NULL:
-            PANIC("\"%s\" should not match TK_NULL",
+          case kNULL:
+            PANIC("\"%s\" should not match kNULL",
                   std::string(buff + position, pos_match.rm_so).c_str());
             break;
-          case TK_SPACE:
+          case kSPACE:
             break;
-
+          case kTAG_BEG:
+          case kTAG_END:
+            PANIC("Unknown tag: %s",
+                  std::string(sub_str_star, pos_match.rm_eo).c_str());
+            break;
           default:
             _tokens.push_back({std::string(sub_str_star, pos_match.rm_eo),
                                rules[i].token_type});

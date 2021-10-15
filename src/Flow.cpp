@@ -28,11 +28,6 @@ void Flow::doStepTask() {
   }
 }
 
-void Flow::doTaskEnd() {
-  assert(_step == kEnd);
-  printf("\n----- EDA_CHALLENGE_Q4 END -----\n");
-}
-
 void Flow::doTaskParseArgv() {
   const struct option table[] = {
       {"conf", required_argument, nullptr, 'f'},
@@ -62,10 +57,10 @@ void Flow::doTaskParseArgv() {
 
 void Flow::doTaskParseResources() {
   parseXml(_config_file);
+  _conf_man = new ConfigManager(_parser.get_tokens());
   parseXml(_constraint_file);
-
-  parseConf();
-  parseConstraint();
+  _constraint_man = new ConstraintManager(_parser.get_tokens());
+  _cell_man = new CellManager(_conf_man);
 }
 
 void Flow::parseXml(char* file) {
@@ -80,14 +75,11 @@ void Flow::parseXml(char* file) {
     if (fgets(buffer, buffer_size, fp) == nullptr) {
       continue;
     }
-
     //
     _parser.make_tokens(buffer);
   }
   fclose(fp);
 }
 
-void Flow::parseConstraint() { TODO(); }
-void Flow::parseConf() { TODO(); }
 void Flow::doTaskFloorplan() { TODO(); }
 }  // namespace EDA_CHALLENGE_Q4
