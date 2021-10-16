@@ -21,4 +21,5 @@
 _*
 *~
 build/
+output/
 !.gitignore

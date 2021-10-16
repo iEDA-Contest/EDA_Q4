@@ -22,5 +22,7 @@ namespace EDA_CHALLENGE_Q4 {
 
 #define TODO() PANIC("TO IMPLEMENT %s()\n", __func__)
 
+// #define GDS
+
 }  // namespace EDA_CHALLENGE_Q4
 #endif

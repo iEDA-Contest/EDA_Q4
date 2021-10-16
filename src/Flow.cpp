@@ -4,6 +4,8 @@
 #include <getopt.h>
 #include <string.h>
 
+#include <fstream>
+
 namespace EDA_CHALLENGE_Q4 {
 void Flow::doStepTask() {
   switch (_step) {
@@ -21,6 +23,10 @@ void Flow::doStepTask() {
       break;
     case kFloorplan:
       doTaskFloorplan();
+      set_step(kGDSGen);
+      break;
+    case kGDSGen:
+      doTaskGDSGen();
       set_step(kEnd);
       break;
     default:
@@ -81,5 +87,57 @@ void Flow::parseXml(char* file) {
   fclose(fp);
 }
 
-void Flow::doTaskFloorplan() { TODO(); }
+void Flow::doTaskFloorplan() {
+  // TODO();  //
+}
+
+void Flow::doTaskGDSGen() {
+#ifndef GDS
+  return;
+#endif
+  std::ofstream gds("/home/liangyuyao/EDA_CHALLENGE_Q4/output/myresult.gds");
+  assert(gds.is_open());
+
+  // gds head
+  gds << "HEADER 600\n";
+  gds << "BGNLIB\n";
+  gds << "LIBNAME DensityLib\n";
+  gds << "UNITS 1 1e-6\n";
+  gds << "\n\n";
+
+  // rectangle's four relative coordinates
+  // template
+  // gds << "BGNSTR\n";
+  // gds << "STRNAME area\n";
+  // gds << "BOUNDARY\n";
+  // gds << "LAYER 1\n";
+  // gds << "DATATYPE 0\n";
+  // gds << "XY\n";
+  // // this five coordinates should be clockwise or anti-clockwise
+  // gds << "0 : 0\n";
+  // gds << "1000 : 0\n";
+  // gds << "1000 : 2000\n";
+  // gds << "0 : 2000\n";
+  // gds << "0 : 0\n";
+  // gds << "ENDEL\n";
+  // gds << "ENDSTR\n";
+
+  // add rectangles into top module
+  gds << "BGNSTR\n";
+  gds << "STRNAME top\n";
+  gds << "\n\n";
+
+  // template
+  // gds << "SREF\n";
+  // gds << "SNAME area\n";
+  // gds << "XY 0:0\n"; // c1 point
+  // gds << "ENDEL\n";
+
+  //
+  gds << "ENDSTR\n";
+  gds << "ENDLIB\n";
+
+  gds.close();
+}
+
 }  // namespace EDA_CHALLENGE_Q4

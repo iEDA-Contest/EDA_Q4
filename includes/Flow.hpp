@@ -12,6 +12,7 @@ enum FlowStepType {
   kParseArgv,
   kParseResources,
   kFloorplan,
+  kGDSGen,
   kEnd,
 };
 
@@ -44,6 +45,7 @@ class Flow {
   void doTaskParseArgv();
   void doTaskParseResources();
   void doTaskFloorplan();
+  void doTaskGDSGen();
   void parseXml(char*);
 
   // member
