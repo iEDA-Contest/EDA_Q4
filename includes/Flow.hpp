@@ -49,12 +49,12 @@ class Flow {
   void parseXml(char*);
 
   // member
-  FlowStepType _step;                     // flow step
-  int _argc;                              // argc of main function
-  char** _argv;                           // argv of main function
-  char* _config_file;                     // configure.xml
-  char* _constraint_file;                 // constraint.xml
-  Regex& _parser = Regex::getInstance();  // xml parser
+  FlowStepType _step;      // flow step
+  int _argc;               // argc of main function
+  char** _argv;            // argv of main function
+  char* _config_file;      // configure.xml
+  char* _constraint_file;  // constraint.xml
+  Regex* _parser;          // xml parser
   ConfigManager* _conf_man;
   ConstraintManager* _constraint_man;
   CellManager* _cell_man;

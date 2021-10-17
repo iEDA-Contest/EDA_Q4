@@ -62,18 +62,20 @@ void Flow::doTaskParseArgv() {
 }
 
 void Flow::doTaskParseResources() {
+  _parser = new Regex(RegexMode::kXML);
   parseXml(_config_file);
-  _conf_man = new ConfigManager(_parser.get_tokens());
+  _conf_man = new ConfigManager(_parser->get_tokens());
   parseXml(_constraint_file);
-  _constraint_man = new ConstraintManager(_parser.get_tokens());
+  _constraint_man = new ConstraintManager(_parser->get_tokens());
   _cell_man = new CellManager(_conf_man);
+  delete _parser;
 }
 
 void Flow::parseXml(char* file) {
   FILE* fp = fopen(file, "r");
-  assert(fp != nullptr);
+  assert(fp != nullptr && _parser != nullptr);
 
-  _parser.reset_tokens();
+  _parser->reset_tokens();
   const uint16_t buffer_size = 256;
   char buffer[buffer_size];
   while (!feof(fp)) {
@@ -82,7 +84,7 @@ void Flow::parseXml(char* file) {
       continue;
     }
     //
-    _parser.make_tokens(buffer);
+    _parser->make_tokens(buffer);
   }
   fclose(fp);
 }
@@ -107,33 +109,35 @@ void Flow::doTaskGDSGen() {
 
   // rectangle's four relative coordinates
   // template
-  // gds << "BGNSTR\n";
-  // gds << "STRNAME area\n";
-  // gds << "BOUNDARY\n";
-  // gds << "LAYER 1\n";
-  // gds << "DATATYPE 0\n";
-  // gds << "XY\n";
-  // // this five coordinates should be clockwise or anti-clockwise
-  // gds << "0 : 0\n";
-  // gds << "1000 : 0\n";
-  // gds << "1000 : 2000\n";
-  // gds << "0 : 2000\n";
-  // gds << "0 : 0\n";
-  // gds << "ENDEL\n";
-  // gds << "ENDSTR\n";
+  gds << "BGNSTR\n";
+  gds << "STRNAME area\n";
+  gds << "BOUNDARY\n";
+  gds << "LAYER 1\n";
+  gds << "DATATYPE 0\n";
+  gds << "XY\n";
+  // this five coordinates should be clockwise or anti-clockwise
+  gds << "0 : 0\n";
+  gds << "1000 : 0\n";
+  gds << "1000 : 2000\n";
+  gds << "0 : 2000\n";
+  gds << "0 : 0\n";
+  gds << "ENDEL\n";
+  gds << "ENDSTR\n";
 
   // add rectangles into top module
+  gds << "\n\n";
   gds << "BGNSTR\n";
   gds << "STRNAME top\n";
   gds << "\n\n";
 
   // template
-  // gds << "SREF\n";
-  // gds << "SNAME area\n";
-  // gds << "XY 0:0\n"; // c1 point
-  // gds << "ENDEL\n";
+  gds << "SREF\n";
+  gds << "SNAME area\n";
+  gds << "XY 0:0\n";  // c1 point
+  gds << "ENDEL\n";
 
   //
+  gds << "\n\n";
   gds << "ENDSTR\n";
   gds << "ENDLIB\n";
 
