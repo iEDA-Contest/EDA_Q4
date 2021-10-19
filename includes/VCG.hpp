@@ -103,6 +103,7 @@ inline VCG::~VCG() {
   for (auto p : _adj_list) {
     p->release_nexts();
     free(p);
+    p = nullptr;
   }
  }
 
