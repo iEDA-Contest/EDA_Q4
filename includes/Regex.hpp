@@ -140,8 +140,8 @@ static struct RegexRule {
         {"</([^<\\?/]*)>", kTAG_END},
 },
   pattern_rules[] = {
-      {" +", kSPACE}, {"|", kColumn}, {"&#60;", kHORIZONTAL},
-      {"S", kSOC},    {"M", kMEM},    {"^", kVERTICAL},
+      {" +", kSPACE}, {"\\^", kVERTICAL}, {"&#60;", kHORIZONTAL},
+      {"S", kSOC},    {"M", kMEM},      {"\\|", kColumn},
 };
 
 class Regex {
@@ -199,6 +199,11 @@ inline Regex::~Regex() {
   for (int i = 0; i < _num_regex; ++i) {
     regfree(_regexs + i);
   }
+  _regexs = nullptr;
+  _tokens.clear();
+  _rules = nullptr;
+  _num_regex = 0;
+  _mode = kMODE_NULL;
 }
 
 /**

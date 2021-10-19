@@ -46,30 +46,37 @@ class Constraint {
   ~Constraint() = default;
 
   // getter
-  auto get_id_pattern() const { return _id_pattern; }
   auto get_constraint(ConstraintType);
+  auto get_pattern() { return _pattern; }
 
   // setter
-  void set_id_pattern(uint16_t id_pattern) { _id_pattern = id_pattern; }
   void set_constraint(ConstraintType, uint16_t);
   void set_constraint(RegexType, const char*);
+  void set_pattern(std::string pattern) { _pattern = pattern; }
 
   // function
 
  private:
   // members
-  uint8_t _id_pattern;
+  std::string _pattern;
   uint16_t _constraint[kTotal];
 };
 
 class ConstraintManager {
  public:
+  // constructor
   ConstraintManager(Token_List&);
   ~ConstraintManager() = default;
 
+  // getter
+  auto get_pattern_list() const { return _pattern_list;}
+
+  // setter
+
+  // function
+
  private:
   std::vector<Constraint> _pattern_list;
-  std::map<uint8_t, std::string> _id_pattern_map;
 };
 
 // Constraint

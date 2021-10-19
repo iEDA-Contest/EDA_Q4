@@ -6,6 +6,8 @@
 
 #include <fstream>
 
+#include "VCG.hpp"
+
 namespace EDA_CHALLENGE_Q4 {
 void Flow::doStepTask() {
   switch (_step) {
@@ -62,7 +64,8 @@ void Flow::doTaskParseArgv() {
 }
 
 void Flow::doTaskParseResources() {
-  _parser = new Regex(RegexMode::kXML);
+  // parse xml
+  _parser = new Regex(kXML);
   parseXml(_config_file);
   _conf_man = new ConfigManager(_parser->get_tokens());
   parseXml(_constraint_file);
@@ -90,7 +93,19 @@ void Flow::parseXml(char* file) {
 }
 
 void Flow::doTaskFloorplan() {
-  // TODO();  //
+  // parse pattern to VCG
+  _parser = new Regex(kPATTERN);
+  for ( auto constraint : _constraint_man->get_pattern_list()) {
+    _parser->make_tokens(const_cast<char*>(constraint.get_pattern().c_str()));
+    VCG(_parser->get_tokens());
+    // !!!!! floorplan >>>>> !!!!!
+    TODO();  
+    // !!!!! <<<<< floorplan !!!!!
+    _parser->reset_tokens();
+  }
+
+  delete _parser;
+  
 }
 
 void Flow::doTaskGDSGen() {

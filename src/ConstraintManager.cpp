@@ -3,7 +3,7 @@ namespace EDA_CHALLENGE_Q4 {
 
 ConstraintManager::ConstraintManager(Token_List& tokens) {
   std::vector<RegexType> stack;  // maybe change to an uint8[] better
-  Constraint* pattern = nullptr;
+  Constraint* constraint = nullptr;
 
   for (auto token : tokens) {
     switch (token.second) {
@@ -16,13 +16,13 @@ ConstraintManager::ConstraintManager(Token_List& tokens) {
       // constraint tag
       case kTAG_CONSTRAINT_BEG:
         stack.push_back(token.second);
-        pattern = new Constraint();
+        constraint = new Constraint();
         break;
       case kTAG_CONSTRAINT_END:
         assert(stack.back() == kTAG_CONSTRAINT_BEG);
         stack.pop_back();
-        _pattern_list.push_back(*pattern);
-        pattern = nullptr;
+        _pattern_list.push_back(*constraint);
+        constraint = nullptr;
         break;
 
       // pattern tag
@@ -95,11 +95,9 @@ ConstraintManager::ConstraintManager(Token_List& tokens) {
       // set data
       case kDATA:
         if (stack.back() == kTAG_PATTERN_BEG) {
-          auto id = _id_pattern_map.size();
-          pattern->set_id_pattern(id);
-          _id_pattern_map[id] = token.first;
+          constraint->set_pattern(token.first);
         } else {
-          pattern->set_constraint(stack.back(), token.first.c_str());
+          constraint->set_constraint(stack.back(), token.first.c_str());
         }
         break;
 
