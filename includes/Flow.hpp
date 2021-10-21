@@ -54,7 +54,7 @@ class Flow {
   char** _argv;            // argv of main function
   char* _config_file;      // configure.xml
   char* _constraint_file;  // constraint.xml
-  Regex* _parser;         
+  Regex* _parser;
   ConfigManager* _conf_man;
   ConstraintManager* _constraint_man;
   CellManager* _cell_man;

@@ -20,6 +20,7 @@ enum ConfigPrio {
   kWidth,
   kHeight,
   kRatioWH,
+  kHeight_Width_Size_Range,
 };
 
 class Config {

@@ -69,7 +69,7 @@ class ConstraintManager {
   ~ConstraintManager() = default;
 
   // getter
-  auto get_pattern_list() const { return _pattern_list;}
+  auto get_pattern_list() const { return _pattern_list; }
 
   // setter
 

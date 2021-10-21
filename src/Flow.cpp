@@ -95,17 +95,16 @@ void Flow::parseXml(char* file) {
 void Flow::doTaskFloorplan() {
   // parse pattern to VCG
   _parser = new Regex(kPATTERN);
-  for ( auto constraint : _constraint_man->get_pattern_list()) {
+  for (auto constraint : _constraint_man->get_pattern_list()) {
     _parser->make_tokens(const_cast<char*>(constraint.get_pattern().c_str()));
     VCG(_parser->get_tokens());
     // !!!!! floorplan >>>>> !!!!!
-    TODO();  
+    // TODO();
     // !!!!! <<<<< floorplan !!!!!
     _parser->reset_tokens();
   }
 
   delete _parser;
-  
 }
 
 void Flow::doTaskGDSGen() {
