@@ -4,11 +4,11 @@
 
 namespace EDA_CHALLENGE_Q4 {
 
-constexpr static uint8_t id_base_mem = id_base * kMem;
-constexpr static uint8_t id_base_soc = id_base * kSoc;
+constexpr static uint8_t id_base_mem = id_base * kCellTypeMem;
+constexpr static uint8_t id_base_soc = id_base * kCellTypeSoc;
 
 ConfigManager::ConfigManager(Token_List& tokens) {
-  std::vector<Config>* op_list = nullptr;
+  std::vector<Config*>* op_list = nullptr;
   std::vector<RegexType> stack;  // maybe change to an uint8[] better
   Config* conf = nullptr;
   uint8_t id_base_tmp = 0;
@@ -37,14 +37,14 @@ ConfigManager::ConfigManager(Token_List& tokens) {
       case kTAG_MEM_END:
         assert(stack.back() == kTAG_MEM_BEG);
         stack.pop_back();
-        op_list->push_back(*conf);
+        op_list->push_back(conf);
         conf = nullptr;
         op_list = nullptr;
         break;
       case kTAG_SOC_END:
         assert(stack.back() == kTAG_SOC_BEG);
         stack.pop_back();
-        op_list->push_back(*conf);
+        op_list->push_back(conf);
         conf = nullptr;
         op_list = nullptr;
         break;
@@ -98,9 +98,22 @@ ConfigManager::ConfigManager(Token_List& tokens) {
   ASSERT(stack.size() == 0, "Some tokens should be processed");
 }
 
-Config* ConfigManager::obtainConfigBy(ConfigPrio tag, ...) {
-  TODO();
-  return nullptr;
+ConfigManager::~ConfigManager() {
+  _id_refers_map.clear();
+  for (auto m : _mem_config_list) {
+    if (m) {
+      delete m;
+      m = nullptr;
+    }
+  }
+  _mem_config_list.clear();
+  for (auto s : _soc_config_list) {
+    if (s) {
+      delete s;
+      s = nullptr;
+    }
+  }
+  _soc_config_list.clear();
 }
 
 }  // namespace EDA_CHALLENGE_Q4

@@ -96,10 +96,12 @@ void Flow::doTaskFloorplan() {
   // parse pattern to VCG
   _parser = new Regex(kPATTERN);
   for (auto constraint : _constraint_man->get_pattern_list()) {
-    _parser->make_tokens(const_cast<char*>(constraint.get_pattern().c_str()));
-    VCG(_parser->get_tokens());
+    _parser->make_tokens(const_cast<char*>(constraint->get_pattern().c_str()));
+    VCG g(_parser->get_tokens());
+    g.set_cell_man(_cell_man);
     // !!!!! floorplan >>>>> !!!!!
     // TODO();
+    g.find_best_place();
     // !!!!! <<<<< floorplan !!!!!
     _parser->reset_tokens();
   }

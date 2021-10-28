@@ -5,6 +5,8 @@
 #include <stdio.h>
 #include <stdlib.h>
 
+#include "stdarg.h"
+
 namespace EDA_CHALLENGE_Q4 {
 
 #define ASSERT(cond, ...)           \

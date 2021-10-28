@@ -21,7 +21,7 @@ ConstraintManager::ConstraintManager(Token_List& tokens) {
       case kTAG_CONSTRAINT_END:
         assert(stack.back() == kTAG_CONSTRAINT_BEG);
         stack.pop_back();
-        _pattern_list.push_back(*constraint);
+        _pattern_list.push_back(constraint);
         constraint = nullptr;
         break;
 

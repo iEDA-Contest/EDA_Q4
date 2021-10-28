@@ -66,7 +66,7 @@ class ConstraintManager {
  public:
   // constructor
   ConstraintManager(Token_List&);
-  ~ConstraintManager() = default;
+  ~ConstraintManager();
 
   // getter
   auto get_pattern_list() const { return _pattern_list; }
@@ -76,7 +76,7 @@ class ConstraintManager {
   // function
 
  private:
-  std::vector<Constraint> _pattern_list;
+  std::vector<Constraint*> _pattern_list;
 };
 
 // Constraint
@@ -92,6 +92,15 @@ inline void Constraint::set_constraint(ConstraintType type, uint16_t data) {
 }
 
 // ConstraintManager
+inline ConstraintManager::~ConstraintManager() {
+  for (auto p : _pattern_list) {
+    if (p) {
+      delete p;
+      p = nullptr;
+    }
+  }
+  _pattern_list.clear();
+}
 
 }  // namespace EDA_CHALLENGE_Q4
 #endif

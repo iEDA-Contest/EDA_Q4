@@ -12,16 +12,7 @@
 namespace EDA_CHALLENGE_Q4 {
 
 const static uint16_t id_base = 100;
-enum CellType { kNull, kMem, kSoc };
-
-enum ConfigPrio {
-  kIdRefer,
-  kAmount,
-  kWidth,
-  kHeight,
-  kRatioWH,
-  kHeight_Width_Size_Range,
-};
+enum CellType { kCellTypeNull, kCellTypeMem, kCellTypeSoc };
 
 class Config {
  public:
@@ -57,7 +48,7 @@ class ConfigManager {
  public:
   // constructor
   ConfigManager(Token_List&);
-  ~ConfigManager() = default;
+  ~ConfigManager();
 
   // getter
   auto get_mem_list() const { return _mem_config_list; }
@@ -66,12 +57,11 @@ class ConfigManager {
   // setter
 
   // function
-  Config* obtainConfigBy(ConfigPrio, ...);
 
  private:
   std::map<uint8_t, std::string> _id_refers_map;  // to store Reference as key
-  std::vector<Config> _mem_config_list;
-  std::vector<Config> _soc_config_list;
+  std::vector<Config*> _mem_config_list;
+  std::vector<Config*> _soc_config_list;
 };
 
 // Config
