@@ -1,11 +1,8 @@
 #ifndef __CONFIGURE_MANAGER_HPP_
 #define __CONFIGURE_MANAGER_HPP_
 
-#include <stdint.h>
-
 #include <map>
 #include <string>
-#include <vector>
 
 #include "Regex.hpp"
 
@@ -26,6 +23,7 @@ class Config {
   auto get_amount() const { return _amount; }
   auto get_width() const { return _width; }
   auto get_height() const { return _height; }
+  auto get_refer() const { return _refer; }
 
   // setter
   void set_id_refer(const uint8_t id_refer) { _id_refer = id_refer; }
@@ -33,6 +31,7 @@ class Config {
   void set_width(const uint16_t width) { _width = width; }
   void set_height(const uint16_t height) { _height = height; }
   void set_value(RegexType, uint16_t);
+  void set_refer(const std::string refer) { _refer = refer; }
 
   // function
 
@@ -42,6 +41,7 @@ class Config {
   uint16_t _amount;
   uint16_t _width;
   uint16_t _height;
+  std::string _refer;
 };
 
 class ConfigManager {

@@ -5,6 +5,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 
+#include "Typedef.h"
 #include "stdarg.h"
 
 namespace EDA_CHALLENGE_Q4 {

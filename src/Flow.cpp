@@ -99,6 +99,7 @@ void Flow::doTaskFloorplan() {
     _parser->make_tokens(const_cast<char*>(constraint->get_pattern().c_str()));
     VCG g(_parser->get_tokens());
     g.set_cell_man(_cell_man);
+    g.set_constraint(constraint);
     // !!!!! floorplan >>>>> !!!!!
     // TODO();
     g.find_best_place();

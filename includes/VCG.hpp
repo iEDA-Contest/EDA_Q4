@@ -1,14 +1,27 @@
 #ifndef __VCG_HPP_
 #define __VCG_HPP_
 
+#include <set>
+
 #include "CellManager.hpp"
+#include "ConstraintManager.hpp"
 #include "Debug.h"
 #include "Regex.hpp"
 
 namespace EDA_CHALLENGE_Q4 {
 
+enum PickHelperType { kPickColumn, kPickRow, kPickWheel, kPickSingle };
+/**
+ * @brief pick recommendation
+ */
+struct PickHelper {
+  GridType _module;
+  uint8_t _first;        // cell pick order recommended
+  PickHelperType _type;  // indicate relative position between cells
+  uint8_t _cell_num;     // cell num should be picked
+};
+
 enum VCGNodeType { kVCG_START, kVCG_MEM, kVCG_SOC, kVCG_END };
-typedef std::vector<std::vector<uint8_t>> GridType;
 
 class VCGNode {
  public:
@@ -23,12 +36,14 @@ class VCGNode {
   auto get_v_placeholder() const { return _v_placeholder; }
   auto get_h_placeholder() const { return _h_placeholder; }
   auto get_cell() const { return _cell; }
-  auto get_froms_num() const {return _froms.size(); }
-  auto get_tos_num() const {return _tos.size(); }
+  auto get_froms_num() const { return _froms.size(); }
+  auto get_tos_num() const { return _tos.size(); }
   VCGNode* get_from(size_t n = 1);
   VCGNode* get_to(size_t n = 1);
   std::vector<VCGNode*>& get_froms() { return _froms; }
   std::vector<VCGNode*>& get_tos() { return _tos; }
+  float get_ratioHV_max();
+  auto get_ratioHV() const { return 1.0 * _h_placeholder / _v_placeholder; }
 
   // setter
   void set_id(uint8_t id) { _id = id; }
@@ -64,16 +79,19 @@ class VCG {
 
   // getter
   auto get_vertex_num() const { return _adj_list.size(); }
-  std::vector<Cell*> get_cells(CellPriority, uint8_t, ...);
-  VCGNode* get_cell(uint8_t);
+  VCGNode* get_node(uint8_t);
+  Cell* get_cell(uint8_t);
   CellType get_cell_type(uint8_t);
+  VCGNodeType get_node_type(uint8_t);
+  CellPriority get_priority(VCGNodeType);
 
   // setter
   void set_cell_man(CellManager*);
+  void set_constraint(Constraint*);
 
   // function
-  void do_place_cell(uint8_t, Cell*);
-  void undo_place_cell(uint8_t);
+  void do_pick_cell(uint8_t, Cell*);
+  void undo_pick_cell(uint8_t);
   bool is_id_valid(uint8_t);
   void show_topology();
   void show_froms_tos();
@@ -83,9 +101,12 @@ class VCG {
  private:
   // getter
   size_t get_max_row(GridType&);
-  std::vector<GridType> get_smaller_module(GridType&);
-  std::vector<GridType> get_smaller_module_column(GridType&);
-  std::vector<GridType> get_smaller_module_row(GridType&);
+  std::vector<GridType> get_smaller_module(GridType&, bool min = false);
+  std::vector<GridType> get_smaller_module_column(GridType&, bool);
+  std::vector<GridType> get_smaller_module_row(GridType&, bool);
+  Point get_min_constraint_x(uint8_t, uint8_t);
+  Point get_min_constraint_y(uint8_t, uint8_t);
+  Cell* get_cell_fits_min_ratioWH(uint8_t);
 
   // setter
   void set_id_grid(size_t, size_t, uint8_t);
@@ -94,11 +115,25 @@ class VCG {
   void build_tos();
   void debug();
   std::vector<GridType> slice();
+  std::vector<PickHelper> make_pick_helpers(std::vector<GridType>&);
+  void pick(PickHelper&);
+  void pick_first(PickHelper&);
+  void pick_column(PickHelper&);
+  void pick_row(PickHelper&);
+  void pick_wheel(PickHelper&);
+  bool pick_done();
+  void place();
+
+  // static
+  static bool cmp_module_priority(GridType&, GridType&);
+  static size_t get_module_row(GridType&);
+  static size_t get_type_num(GridType&);
 
   // members
   std::vector<VCGNode*> _adj_list;  // Node0 is end, final Node is start
   GridType _id_grid;                // [column][row]
   CellManager* _cell_man;
+  Constraint* _constraint;
 };
 
 // VCGNode
@@ -182,12 +217,16 @@ inline void VCGNode::show_tos() {
 }
 
 /*Not release memory, please manage it manly!*/
-inline void VCGNode::set_cell_null() {
-  _cell = nullptr;
-}
+inline void VCGNode::set_cell_null() { _cell = nullptr; }
 
 inline VCGNode* VCGNode::get_to(size_t n) {
   return 0 < n && n <= _tos.size() ? _tos[n - 1] : nullptr;
+}
+
+inline float VCGNode::get_ratioHV_max() {
+  float ret1 = 1.0 * _v_placeholder / _h_placeholder;
+  float ret2 = 1.0 * _h_placeholder / _v_placeholder;
+  return ret1 > ret2 ? ret1 : ret2;
 }
 
 // VCG
@@ -202,9 +241,7 @@ inline void VCG::set_id_grid(size_t column, size_t row, uint8_t id) {
   }
 }
 
-inline void VCG::debug() { 
-  show_topology(); 
-}
+inline void VCG::debug() { show_topology(); }
 
 inline void VCG::set_cell_man(CellManager* cm) {
   if (_cell_man == nullptr && cm != nullptr) {
@@ -212,12 +249,12 @@ inline void VCG::set_cell_man(CellManager* cm) {
   }
 }
 
-inline VCGNode* VCG::get_cell(uint8_t id) {
+inline VCGNode* VCG::get_node(uint8_t id) {
   return id < _adj_list.size() ? _adj_list[id] : nullptr;
 }
 
 inline CellType VCG::get_cell_type(uint8_t id) {
-  VCGNode* p = get_cell(id);
+  VCGNode* p = get_node(id);
   if (p) {
     switch (p->get_type()) {
       case kVCG_MEM:
@@ -232,14 +269,65 @@ inline CellType VCG::get_cell_type(uint8_t id) {
   }
 }
 
-inline bool  VCG::is_id_valid(uint8_t id) { return id < _adj_list.size(); }
+inline VCGNodeType VCG::get_node_type(uint8_t id) {
+  assert(is_id_valid(id));
+  return _adj_list[id]->get_type();
+}
+
+inline bool VCG::is_id_valid(uint8_t id) { return id < _adj_list.size(); }
 
 inline size_t VCG::get_max_row(GridType& grid) {
   size_t max_row = 0;
-  for (auto column : _id_grid) {
+  for (auto column : grid) {
     max_row = max_row == 0 || max_row < column.size() ? column.size() : max_row;
   }
   return max_row;
+}
+
+inline size_t VCG::get_module_row(GridType& grid) {
+  size_t max_row = 0;
+  for (auto column : grid) {
+    max_row = max_row == 0 || max_row < column.size() ? column.size() : max_row;
+  }
+  return max_row;
+}
+
+/**
+ * @brief Get number of types that grid contains
+ *
+ *
+ *
+ * @param grid
+ * @return size_t
+ */
+inline size_t VCG::get_type_num(GridType& grid) {
+  std::set<uint8_t> set;
+  for (auto column : grid) {
+    for (auto row : column) {
+      set.insert(row);
+    }
+  }
+
+  return set.size();
+}
+
+inline void VCG::do_pick_cell(uint8_t id, Cell* cell) {
+  if (is_id_valid(id) && cell != nullptr &&
+      _adj_list[id]->get_cell() == nullptr) {
+    _adj_list[id]->set_cell(cell);
+    _cell_man->delete_cell(get_cell_type(id), cell);
+  }
+}
+
+inline Cell* VCG::get_cell(uint8_t id) {
+  VCGNode* node = get_node(id);
+  return node ? node->get_cell() : nullptr;
+}
+
+inline void VCG::set_constraint(Constraint* c) {
+  if (c != nullptr && _constraint == nullptr) {
+    _constraint = c;
+  }
 }
 
 }  // namespace EDA_CHALLENGE_Q4

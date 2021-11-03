@@ -7,14 +7,18 @@
 #include <vector>
 
 #include "ConfigManager.hpp"
-#include "Point.hpp"
+#include "Rectangle.hpp"
 
 namespace EDA_CHALLENGE_Q4 {
 
 enum CellPriority {
+  kPrioMem,
+  kPrioSoc,
   kRange,
-  kRatio_MAX,
-  kDeath_MIN,
+  kRatioMAX,
+  kDeathCol,
+  kDeathRow,
+  kPrioNull
 };
 
 class Cell {
@@ -30,13 +34,18 @@ class Cell {
   auto get_width() const { return _width; }
   auto get_height() const { return _height; }
   auto get_max_edge() const { return _height > _width ? _height : _width; }
+  auto get_min_edge() const { return _height < _width ? _height : _width; }
+  auto get_ratioWH() const { return 1.0 * _width / _height; }
   float get_ratioWH_max();
+  auto get_refer() const { return _refer; }
+  int get_area() const { return _width * _height; }
 
   // setter
   void set_positon(int x, int y) { _c1 = Point(x, y); }
   void set_rotation(uint16_t r) { _rotation = r; }
   void set_width(uint16_t width) { _width = width; }
   void set_height(uint16_t height) { _height = height; }
+  void set_refer(std::string refer) { _refer = refer; }
 
   // function
   void rotate();
@@ -47,6 +56,7 @@ class Cell {
   bool _rotation;  // 90 degree or not
   uint16_t _width;
   uint16_t _height;
+  std::string _refer;
 };
 
 class CellManager {
@@ -66,15 +76,24 @@ class CellManager {
 
   // function
   void insert_cell(CellType, Cell*);
-  std::vector<Cell*> choose_cells(CellPriority, CellType, va_list);
+  std::vector<Cell*> choose_cells(CellPriority, ...);
+  void delete_cell(CellType, Cell*);
 
  private:
+  // getter
+  std::vector<Cell*>* get_list(CellType);
+  std::vector<Cell*> get_min_area_sorted_chose_cells(std::map<Cell*, int>&);
+
   // function
   void init_cells(CellType, std::vector<Config*>);
-  std::vector<Cell*>* choose_oplist(CellType);
   std::vector<Cell*> choose_range(CellType, uint16_t, uint16_t, uint16_t,
                                   uint16_t);
   std::vector<Cell*> choose_ratioWH_max(CellType);
+  std::vector<Cell*> choose_death_y(CellType, Rectangle&, int, int);
+  std::vector<Cell*> choose_death_x(CellType, Rectangle&, int, int);
+
+  // static
+  static bool cmp_ratioWH_max(Cell* a, Cell* b);
 
   // members
   std::vector<Cell*> _mems;
@@ -87,6 +106,7 @@ inline Cell::Cell(const Cell& c) {
   _rotation = c.get_rotation();
   _width = c.get_width();
   _height = c.get_height();
+  _refer = c.get_refer();
 }
 
 /* rotate the cell and exchange width with height*/
@@ -106,7 +126,7 @@ inline float Cell::get_ratioWH_max() {
 // CellManager
 inline void CellManager::insert_cell(CellType type, Cell* cell) {
   assert(cell != nullptr);
-  auto list = choose_oplist(type);
+  auto list = get_list(type);
   if (list) {
     list->push_back(cell);
   }
@@ -144,7 +164,7 @@ inline CellManager::~CellManager() {
   _socs.clear();
 }
 
-inline std::vector<Cell*>* CellManager::choose_oplist(CellType type) {
+inline std::vector<Cell*>* CellManager::get_list(CellType type) {
   std::vector<Cell*>* op_list = nullptr;
   switch (type) {
     case kCellTypeMem:
@@ -161,13 +181,23 @@ inline std::vector<Cell*>* CellManager::choose_oplist(CellType type) {
 }
 
 inline std::vector<Cell*> CellManager::choose_ratioWH_max(CellType obj_type) {
-  std::vector<Cell*>* op_list = choose_oplist(obj_type);
+  std::vector<Cell*>* op_list = get_list(obj_type);
   assert(op_list != nullptr);
 
   std::vector<Cell*> result = *op_list;
-  extern bool compare_ratioWH_max(Cell*, Cell*);
-  std::sort(result.begin(), result.end(), compare_ratioWH_max);
+  std::sort(result.begin(), result.end(), cmp_ratioWH_max);
   return result;
+}
+
+inline bool CellManager::cmp_ratioWH_max(Cell* a, Cell* b) {
+  if (a == nullptr || b == nullptr) return false;
+  if (a->get_ratioWH_max() > b->get_ratioWH_max()) {
+    return true;
+  } else if (a->get_ratioWH_max() == b->get_ratioWH_max()) {
+    return a->get_max_edge() > b->get_max_edge() ? true : false;
+  } else {
+    return false;
+  }
 }
 
 }  // namespace EDA_CHALLENGE_Q4

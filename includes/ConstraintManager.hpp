@@ -5,7 +5,6 @@
 
 #include <map>
 #include <utility>
-#include <vector>
 
 #include "Debug.h"
 #include "Regex.hpp"
@@ -46,7 +45,7 @@ class Constraint {
   ~Constraint() = default;
 
   // getter
-  auto get_constraint(ConstraintType);
+  auto get_constraint(ConstraintType) const;
   auto get_pattern() { return _pattern; }
 
   // setter
@@ -81,7 +80,7 @@ class ConstraintManager {
 
 // Constraint
 
-inline auto Constraint::get_constraint(ConstraintType type) {
+inline auto Constraint::get_constraint(ConstraintType type) const {
   ASSERT(0 <= type && type < kTotal, "Unknow constriant id:%d", type);
   return _constraint[type];
 }

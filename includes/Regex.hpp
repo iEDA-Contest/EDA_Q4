@@ -6,7 +6,6 @@
 #include <sys/types.h>
 
 #include <string>
-#include <vector>
 
 #include "Debug.h"
 
@@ -141,7 +140,7 @@ static struct RegexRule {
 },
   pattern_rules[] = {
       {" +", kSPACE}, {"\\^", kVERTICAL}, {"&#60;", kHORIZONTAL},
-      {"S", kSOC},    {"M", kMEM},      {"\\|", kColumn},
+      {"S", kSOC},    {"M", kMEM},        {"\\|", kColumn},
 };
 
 class Regex {
