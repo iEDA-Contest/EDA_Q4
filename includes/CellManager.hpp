@@ -29,7 +29,8 @@ class Cell {
   ~Cell() = default;
 
   // getter
-  auto get_positon() const { return _c1; }
+  auto get_c1() const { return _c1; }
+  auto get_c3() const { return Point(_c1._x + _width, _c1._y + _height); }
   auto get_rotation() const { return _rotation; }
   auto get_width() const { return _width; }
   auto get_height() const { return _height; }
@@ -39,24 +40,39 @@ class Cell {
   float get_ratioWH_max();
   auto get_refer() const { return _refer; }
   int get_area() const { return _width * _height; }
+  auto get_x() const { return _c1._x; }
+  auto get_y() const { return _c1._y; }
+  auto get_node_id() const { return _node_id; }
+  auto get_x_range() const { return _x_range; }
+  auto get_y_range() const { return _y_range; }
+  float get_flex_x() const;
+  float get_flex_y() const;
 
   // setter
-  void set_positon(int x, int y) { _c1 = Point(x, y); }
+  void set_positon(int x, int y) { _c1._x = x, _c1._y = y; }
   void set_rotation(uint16_t r) { _rotation = r; }
   void set_width(uint16_t width) { _width = width; }
   void set_height(uint16_t height) { _height = height; }
   void set_refer(std::string refer) { _refer = refer; }
-
+  void set_x(int x) { _c1._x = x; }
+  void set_y(int y) { _c1._y = y; }
+  void set_node_id(uint8_t id) { _node_id = id; }
+  void set_x_range(Point range) { _x_range = range; }
+  void set_y_range(Point range) { _y_range = range; }
+  
   // function
   void rotate();
 
  private:
   // members
-  Point _c1;       // left bottom coordinate of the rectangle
-  bool _rotation;  // 90 degree or not
+  Point _c1;          // left bottom coordinate of the rectangle
+  bool _rotation;     // 90 degree or not
   uint16_t _width;
   uint16_t _height;
   std::string _refer;
+  uint8_t _node_id;   // this should not be 0, as 0 is end node
+  Point _x_range;      // if c1 in this range, then x meets constraint
+  Point _y_range;      // if c1 in this range, then y meets constraint
 };
 
 class CellManager {
@@ -102,11 +118,12 @@ class CellManager {
 
 // Cell
 inline Cell::Cell(const Cell& c) {
-  _c1 = c.get_positon();
+  _c1 = c.get_c1();
   _rotation = c.get_rotation();
   _width = c.get_width();
   _height = c.get_height();
   _refer = c.get_refer();
+  _node_id = c.get_node_id();
 }
 
 /* rotate the cell and exchange width with height*/
@@ -121,6 +138,20 @@ inline float Cell::get_ratioWH_max() {
   float r1 = 1.0 * _width / _height;
   float r2 = 1.0 * _height / _width;
   return r1 > r2 ? r1 : r2;
+}
+
+inline float Cell::get_flex_x() const {
+  return 1 - (
+              (_c1._x - _x_range._x) / 
+              (_x_range._y - _x_range._x)
+            ); 
+}
+
+inline float Cell::get_flex_y() const {
+  return 1 - (
+              (_c1._y - _y_range._x) / 
+              (_y_range._y - _y_range._x)
+            ); 
 }
 
 // CellManager

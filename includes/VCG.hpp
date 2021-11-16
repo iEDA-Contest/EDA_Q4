@@ -1,6 +1,7 @@
 #ifndef __VCG_HPP_
 #define __VCG_HPP_
 
+#include <queue>
 #include <set>
 
 #include "CellManager.hpp"
@@ -10,15 +11,23 @@
 
 namespace EDA_CHALLENGE_Q4 {
 
-enum PickHelperType { kPickColumn, kPickRow, kPickWheel, kPickSingle };
+enum ModuleType { kMoColumn, kMoRow, kMoWheel, kMoSingle };
 /**
  * @brief pick recommendation
  */
-struct PickHelper {
+class ModuleHelper {
+ public:
+  // constructor
+  ModuleHelper();
+  ~ModuleHelper();
+
+  // members
   GridType _module;
-  uint8_t _first;        // cell pick order recommended
-  PickHelperType _type;  // indicate relative position between cells
-  uint8_t _cell_num;     // cell num should be picked
+  uint8_t _first_pick;  // cell pick order recommended
+  ModuleType _type;     // indicate relative position between cells
+  uint8_t _cell_num;    // cell num should be picked
+  Rectangle* _box;      // bounding box of this module
+  uint8_t _first_place; // cell place order topological    
 };
 
 enum VCGNodeType { kVCG_START, kVCG_MEM, kVCG_SOC, kVCG_END };
@@ -44,11 +53,17 @@ class VCGNode {
   std::vector<VCGNode*>& get_tos() { return _tos; }
   float get_ratioHV_max();
   auto get_ratioHV() const { return 1.0 * _h_placeholder / _v_placeholder; }
+  VCGNode* get_min_from();
+  auto get_max_column_index() const { return _max_column_index; }
+  auto get_column_index() const { return  _max_column_index - _h_placeholder + 1; }
+  auto get_max_row_index() const { return _max_row_index; }
 
   // setter
   void set_id(uint8_t id) { _id = id; }
   void set_cell(Cell* cell) { _cell = cell; }
   void set_cell_null();
+  void set_max_column_index(int index) { _max_column_index = index; }
+  void set_max_row_index(int index) { _max_row_index = index; }
 
   // function
   void inc_v_placeholder() { ++_v_placeholder; }
@@ -59,8 +74,13 @@ class VCGNode {
   void insert_to(VCGNode*);
   void show_froms();
   void show_tos();
+  bool is_from_start();
+  bool is_first_column();
 
  private:
+  // static
+  static bool cmp_min_node(VCGNode*, VCGNode*);
+
   // members
   uint8_t _id;                   // VCG Node id
   VCGNodeType _type;             // VCG Node type
@@ -69,6 +89,20 @@ class VCGNode {
   std::vector<VCGNode*> _froms;  // in column order, top-down
   std::vector<VCGNode*> _tos;    // order in shortest path to END, bottom-up
   Cell* _cell;                   // not recommend to destory _cell here
+  int _max_column_index;         // the max column index in _id_grid. Start and End is -1
+  int _max_row_index;            // the max row index in _id_grid. Start and End is -1
+};
+
+struct CmpVCGNodeTopology {
+  bool operator()(VCGNode*, VCGNode*);
+};
+
+struct CmpVCGNodeMoCol {
+  bool operator()(VCGNode*, VCGNode*);
+};
+
+struct CmpVCGNodeMoRow {
+  bool operator()(VCGNode*, VCGNode*);
 };
 
 class VCG {
@@ -84,6 +118,7 @@ class VCG {
   CellType get_cell_type(uint8_t);
   VCGNodeType get_node_type(uint8_t);
   CellPriority get_priority(VCGNodeType);
+  // int get_column_index(uint8_t);
 
   // setter
   void set_cell_man(CellManager*);
@@ -97,6 +132,7 @@ class VCG {
   void show_froms_tos();
   void show_id_grid();
   void find_best_place();
+  void gen_GDS();
 
  private:
   // getter
@@ -104,37 +140,73 @@ class VCG {
   std::vector<GridType> get_smaller_module(GridType&, bool min = false);
   std::vector<GridType> get_smaller_module_column(GridType&, bool);
   std::vector<GridType> get_smaller_module_row(GridType&, bool);
-  Point get_min_constraint_x(uint8_t, uint8_t);
-  Point get_min_constraint_y(uint8_t, uint8_t);
+  Point get_constraint_x(uint8_t, uint8_t);
+  Point get_constraint_y(uint8_t, uint8_t);
+  Point get_constraint_x(uint8_t);
+  Point get_constraint_y(uint8_t);
   Cell* get_cell_fits_min_ratioWH(uint8_t);
+  std::vector<Cell*> get_left_cells(uint8_t);
+  std::map<uint8_t, std::vector<uint8_t>> get_in_edge_list();
+  std::vector<Cell*> get_colomn_cells(int);
+  std::vector<Cell*> get_left_overlap_y_cells(VCGNode*);
 
   // setter
   void set_id_grid(size_t, size_t, uint8_t);
 
   // function
-  void build_tos();
+  void init_tos();
+  void init_column_row_index();
   void debug();
   std::vector<GridType> slice();
-  std::vector<PickHelper> make_pick_helpers(std::vector<GridType>&);
-  void pick(PickHelper&);
-  void pick_first(PickHelper&);
-  void pick_column(PickHelper&);
-  void pick_row(PickHelper&);
-  void pick_wheel(PickHelper&);
+  std::vector<ModuleHelper*> make_pick_helpers(std::vector<GridType>&);
+  void pick(ModuleHelper*);
+  void pick_first(ModuleHelper*);
+  void pick_column(ModuleHelper*);
+  void pick_row(ModuleHelper*);
+  void pick_wheel(ModuleHelper*);
   bool pick_done();
+  // void place_bad();
+  // void place_y_legalize();
+  // void place_cell_y_legalize(uint8_t);
+  // void place_x_legalize();
+  // void place_cell_x_legalize(uint8_t);
+  bool is_first_column(uint8_t);
+  bool is_overlap_y(Cell*, Cell*);
+  bool is_overlap_x(Cell*, Cell*);
   void place();
+  void place_module(ModuleHelper*, std::map<uint8_t, bool>&);
+  void place_sin(ModuleHelper*, std::map<uint8_t, bool>&);
+  void place_col(ModuleHelper*, std::map<uint8_t, bool>&);
+  void place_row(ModuleHelper*, std::map<uint8_t, bool>&);
+  void place_whe(ModuleHelper*, std::map<uint8_t, bool>&);
+  void place_node(VCGNode*, float, float);
+  void make_helper_map(std::vector<ModuleHelper*>&);
+  bool is_froms_visited(GridType&, std::map<uint8_t, bool>&);
+  std::priority_queue<VCGNode*, std::vector<VCGNode*>, CmpVCGNodeMoCol> make_col_visit_queue(ModuleHelper*);
+  std::priority_queue<VCGNode*, std::vector<VCGNode*>, CmpVCGNodeMoRow> make_row_visit_queue(ModuleHelper*);
+  std::queue<uint8_t> make_whe_visit_queue(ModuleHelper*);
+  Point cal_y_range(VCGNode*, float);
+  Point cal_x_range(VCGNode*, float);
+  void set_module_box(uint8_t);
+  std::map<uint8_t, std::set<uint8_t>> make_in_edge_list(GridType&);
+
 
   // static
   static bool cmp_module_priority(GridType&, GridType&);
   static size_t get_module_row(GridType&);
   static size_t get_type_num(GridType&);
+  static size_t _gds_file_num;
 
   // members
   std::vector<VCGNode*> _adj_list;  // Node0 is end, final Node is start
   GridType _id_grid;                // [column][row]
   CellManager* _cell_man;
   Constraint* _constraint;
+  std::map<uint8_t, ModuleHelper*> _helper_map;
+  std::vector<uint8_t> _place_stack;
 };
+
+
 
 // VCGNode
 inline VCGNode::VCGNode(VCGNodeType type)
@@ -217,7 +289,10 @@ inline void VCGNode::show_tos() {
 }
 
 /*Not release memory, please manage it manly!*/
-inline void VCGNode::set_cell_null() { _cell = nullptr; }
+inline void VCGNode::set_cell_null() {
+  _cell = nullptr;
+  _cell->set_node_id(0);
+}
 
 inline VCGNode* VCGNode::get_to(size_t n) {
   return 0 < n && n <= _tos.size() ? _tos[n - 1] : nullptr;
@@ -227,6 +302,47 @@ inline float VCGNode::get_ratioHV_max() {
   float ret1 = 1.0 * _v_placeholder / _h_placeholder;
   float ret2 = 1.0 * _h_placeholder / _v_placeholder;
   return ret1 > ret2 ? ret1 : ret2;
+}
+
+inline bool VCGNode::is_from_start() {
+  for (auto node : _froms) {
+    if (node->get_type() == kVCG_START) {
+      return true;
+    }
+    return false; // the first node should be 'start' if it exists
+  }
+  // 'start' has no froms
+  return false;
+}
+
+inline VCGNode* VCGNode::get_min_from() {
+  std::vector<VCGNode*> tmp = _froms;
+  std::sort(tmp.begin(), tmp.end(), cmp_min_node);
+  return tmp.size() ? tmp[0] : nullptr;
+}
+
+inline bool VCGNode::cmp_min_node(VCGNode* n1, VCGNode* n2) {
+  if (n1 == nullptr || n2 == nullptr) {
+    return false;
+  } else {
+    return n1->get_id() < n2->get_id();
+  }
+}
+
+inline bool VCGNode::is_first_column() {
+  return get_column_index() == 0;
+}
+
+// ModuleHelper
+
+inline ModuleHelper::ModuleHelper()
+  :_first_pick(0), _type(kMoSingle), _cell_num(0){
+  _module.resize(0);
+  _box = new Rectangle();
+}
+
+inline ModuleHelper::~ModuleHelper()  {
+  delete(_box);
 }
 
 // VCG
@@ -314,8 +430,15 @@ inline size_t VCG::get_type_num(GridType& grid) {
 inline void VCG::do_pick_cell(uint8_t id, Cell* cell) {
   if (is_id_valid(id) && cell != nullptr &&
       _adj_list[id]->get_cell() == nullptr) {
+    //
+    cell->set_node_id(id);
+    cell->set_refer(cell->get_refer() + std::to_string(id));
     _adj_list[id]->set_cell(cell);
     _cell_man->delete_cell(get_cell_type(id), cell);
+
+    // debug
+    g_log << "nodeid = " << std::to_string(id) << ", cell = " << cell->get_refer() << "\n";
+    g_log.flush();
   }
 }
 
@@ -328,6 +451,82 @@ inline void VCG::set_constraint(Constraint* c) {
   if (c != nullptr && _constraint == nullptr) {
     _constraint = c;
   }
+}
+
+inline bool VCG::is_first_column(uint8_t id) {
+  ASSERT(_id_grid.size(), "_id_grid is empty!");
+  for (auto id_first_column : _id_grid[0]) {
+    if (id_first_column == id) {
+      return true;
+    }
+  }
+
+  return false;
+}
+
+inline std::map<uint8_t, std::vector<uint8_t>> VCG::get_in_edge_list() {
+  std::map<uint8_t, std::vector<uint8_t>> ret;
+  for (auto node : _adj_list) {
+    std::vector<uint8_t> ins;
+    for (auto from : node->get_froms()) {
+      ins.push_back(from->get_id());
+    }
+    ret[node->get_id()] = ins;
+  }
+  return ret;
+}
+
+// inline int VCG::get_column_index(uint8_t check) {
+//   int ret = -1;
+
+//   int tmp = -1;
+//   for (auto column : _id_grid) {
+//     ++tmp;
+//     for (auto id : column) {
+//       if (id == check) {
+//         ret = tmp;
+//         continue; 
+//       }
+//     }
+//   }
+
+//   return ret;
+// }
+
+inline bool CmpVCGNodeTopology::operator()(VCGNode* n1, VCGNode* n2) {
+  if (n1 == nullptr || n2 == nullptr) return false;
+
+  return n1->get_max_column_index() > n2->get_max_column_index();
+}
+
+inline std::vector<Cell*> VCG::get_colomn_cells(int co_id) {
+  std::vector<Cell*> ret;
+  if(co_id >= 0 && (size_t)co_id < _id_grid.size()) {
+    std::set<uint8_t> in_list_set;
+    for(auto id : _id_grid[co_id]){
+      if(in_list_set.count(id) == 0) {
+        auto cell = get_cell(id);
+        if (cell) {
+          ret.push_back(cell);
+          in_list_set.insert(id);
+        }
+      }
+    }
+  }
+
+  return ret;
+}
+
+inline bool CmpVCGNodeMoCol::operator()(VCGNode* n1, VCGNode* n2) {
+  if (n1 == nullptr || n2 == nullptr) return false;
+
+  return n1->get_max_row_index() < n2->get_max_row_index();
+}
+
+inline bool CmpVCGNodeMoRow::operator()(VCGNode* n1, VCGNode* n2) {
+  if (n1 == nullptr || n2 == nullptr) return false;
+
+  return n1->get_column_index() > n2->get_column_index();
 }
 
 }  // namespace EDA_CHALLENGE_Q4

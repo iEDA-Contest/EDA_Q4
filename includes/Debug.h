@@ -2,11 +2,13 @@
 #define __MACRO_H_
 
 #include <assert.h>
+#include <stdarg.h>
 #include <stdio.h>
 #include <stdlib.h>
 
+#include <fstream>
+
 #include "Typedef.h"
-#include "stdarg.h"
 
 namespace EDA_CHALLENGE_Q4 {
 
@@ -25,7 +27,11 @@ namespace EDA_CHALLENGE_Q4 {
 
 #define TODO() PANIC("TO IMPLEMENT %s()\n", __func__)
 
-// #define GDS
+#define GDS
+
+extern std::fstream g_log;
+void log_init();
+void log_close();
 
 }  // namespace EDA_CHALLENGE_Q4
 #endif

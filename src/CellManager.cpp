@@ -109,25 +109,29 @@ void CellManager::delete_cell(CellType type, Cell* cell) {
  * @param box       bounding box
  * @param min       min val that should be away from box
  * @param max       max val that should be away from box
- * @return std::vector<Cell*> All cells can directly be set without rotation again.
+ * @return std::vector<Cell*> All cells can directly be set without rotation
+ * again.
  */
-std::vector<Cell*> CellManager::choose_death_y(CellType target, Rectangle& box, int min, int max) {
+std::vector<Cell*> CellManager::choose_death_y(CellType target, Rectangle& box,
+                                               int min, int max) {
   assert(min <= max);
   std::vector<Cell*>* op_list = get_list(target);
   assert(op_list != nullptr);
 
   std::map<Cell*, int> area_map;
-  for(auto cell : *op_list) {
-      auto area_ori =    std::max(box.get_width(), (int)cell->get_width()) *  (box.get_height() + min + cell->get_height());
-      auto area_rotate = std::max(box.get_width(), (int)cell->get_height()) * (box.get_height() + min + cell->get_width());
-      if (area_rotate < area_ori) {
-        cell->rotate();
-      }
+  for (auto cell : *op_list) {
+    auto area_ori = std::max(box.get_width(), (int)cell->get_width()) *
+                    (box.get_height() + min + cell->get_height());
+    auto area_rotate = std::max(box.get_width(), (int)cell->get_height()) *
+                       (box.get_height() + min + cell->get_width());
+    if (area_rotate < area_ori) {
+      cell->rotate();
+    }
 
-      auto tmp = box;
-      tmp._c3._x = std::max(box.get_width(), (int)cell->get_width());
-      tmp._c3._y = box.get_height() + min + cell->get_height();
-      area_map[cell] = tmp.get_area() - box.get_area() - cell->get_area();
+    auto tmp = box;
+    tmp._c3._x = std::max(box.get_width(), (int)cell->get_width());
+    tmp._c3._y = box.get_height() + min + cell->get_height();
+    area_map[cell] = tmp.get_area() - box.get_area() - cell->get_area();
   }
 
   return get_min_area_sorted_chose_cells(area_map);
@@ -136,36 +140,41 @@ std::vector<Cell*> CellManager::choose_death_y(CellType target, Rectangle& box, 
 /**
  * @brief choose cells according to minimal death area in x direction.
  * Here can optimize.
- * 
+ *
  * @param target    target cell type
  * @param box       bounding box
  * @param min       min val that should be away from box
  * @param max       max val that should be away from box
- * @return std::vector<Cell*> All cells can directly be set without rotation again.
+ * @return std::vector<Cell*> All cells can directly be set without rotation
+ * again.
  */
-std::vector<Cell*> CellManager::choose_death_x(CellType target, Rectangle& box, int min, int max) {
+std::vector<Cell*> CellManager::choose_death_x(CellType target, Rectangle& box,
+                                               int min, int max) {
   assert(min <= max);
   std::vector<Cell*>* op_list = get_list(target);
   assert(op_list != nullptr);
 
   std::map<Cell*, int> death;
-  for(auto cell : *op_list) {
-      auto area_ori =    std::max(box.get_height(), (int)cell->get_height()) *  (box.get_width() + min + cell->get_width());
-      auto area_rotate = std::max(box.get_height(), (int)cell->get_width()) * (box.get_width() + min + cell->get_height());
-      if (area_rotate < area_ori) {
-        cell->rotate();
-      }
+  for (auto cell : *op_list) {
+    auto area_ori = std::max(box.get_height(), (int)cell->get_height()) *
+                    (box.get_width() + min + cell->get_width());
+    auto area_rotate = std::max(box.get_height(), (int)cell->get_width()) *
+                       (box.get_width() + min + cell->get_height());
+    if (area_rotate < area_ori) {
+      cell->rotate();
+    }
 
-      auto tmp = box;
-      tmp._c3._x = box.get_width() + min + cell->get_width();
-      tmp._c3._y = std::max(box.get_height(), (int)cell->get_height());
-      death[cell] = tmp.get_area() - box.get_area() - cell->get_area();
+    auto tmp = box;
+    tmp._c3._x = box.get_width() + min + cell->get_width();
+    tmp._c3._y = std::max(box.get_height(), (int)cell->get_height());
+    death[cell] = tmp.get_area() - box.get_area() - cell->get_area();
   }
-  
+
   return get_min_area_sorted_chose_cells(death);
 }
 
-std::vector<Cell*> CellManager::get_min_area_sorted_chose_cells(std::map<Cell*, int>& area_map) {
+std::vector<Cell*> CellManager::get_min_area_sorted_chose_cells(
+    std::map<Cell*, int>& area_map) {
   std::multimap<int, Cell*> area_sorted;
   for (auto p : area_map) {
     area_sorted.insert(std::make_pair(p.second, p.first));

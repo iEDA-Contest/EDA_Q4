@@ -12,7 +12,8 @@ namespace EDA_CHALLENGE_Q4 {
 void Flow::doStepTask() {
   switch (_step) {
     case kInit:
-      printf("\n----- EDA_CHALLENGE_Q4 -----\n");
+      g_log << "----- EDA_CHALLENGE_Q4 -----\n";
+      g_log.flush();
       set_step(kParseArgv);
       break;
     case kParseArgv:
@@ -25,10 +26,6 @@ void Flow::doStepTask() {
       break;
     case kFloorplan:
       doTaskFloorplan();
-      set_step(kGDSGen);
-      break;
-    case kGDSGen:
-      doTaskGDSGen();
       set_step(kEnd);
       break;
     default:
@@ -96,6 +93,10 @@ void Flow::doTaskFloorplan() {
   // parse pattern to VCG
   _parser = new Regex(kPATTERN);
   for (auto constraint : _constraint_man->get_pattern_list()) {
+
+    g_log << "\n## " << constraint->get_pattern() << " >>\n";
+    g_log.flush();
+
     _parser->make_tokens(const_cast<char*>(constraint->get_pattern().c_str()));
     VCG g(_parser->get_tokens());
     g.set_cell_man(_cell_man);
@@ -104,12 +105,19 @@ void Flow::doTaskFloorplan() {
     // TODO();
     g.find_best_place();
     // !!!!! <<<<< floorplan !!!!!
+    g.gen_GDS();
     _parser->reset_tokens();
+
+    g_log <<" << end\n";
+    g_log.flush();
   }
 
   delete _parser;
 }
 
+
+
+/*
 void Flow::doTaskGDSGen() {
 #ifndef GDS
   return;
@@ -160,5 +168,7 @@ void Flow::doTaskGDSGen() {
 
   gds.close();
 }
+*/
+
 
 }  // namespace EDA_CHALLENGE_Q4

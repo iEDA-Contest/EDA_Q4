@@ -6,12 +6,12 @@
 
 namespace EDA_CHALLENGE_Q4 { 
 
-struct Rectangle {
+class Rectangle {
  public:
   // constructor
   Rectangle() = default;
   Rectangle(Point, Point);
-  Rectangle(Rectangle&);
+  Rectangle(const Rectangle&);
 
   // getter
   auto get_width() { return std::abs(_c1._x - _c3._x); }
@@ -33,7 +33,7 @@ inline Rectangle::Rectangle(Point c1, Point c3){
   _c3 = c3;
 }
 
-inline Rectangle::Rectangle(Rectangle& r) {
+inline Rectangle::Rectangle(const Rectangle& r) {
     _c1 = r._c1;
     _c3 = r._c3;
 }

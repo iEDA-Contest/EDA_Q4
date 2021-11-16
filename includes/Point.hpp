@@ -2,7 +2,7 @@
 #define __POINT_HPP_
 
 namespace EDA_CHALLENGE_Q4 {
-struct Point {
+class Point {
  public:
   // constructor
   Point() = default;

@@ -12,7 +12,6 @@ enum FlowStepType {
   kParseArgv,
   kParseResources,
   kFloorplan,
-  kGDSGen,
   kEnd,
 };
 
@@ -45,7 +44,6 @@ class Flow {
   void doTaskParseArgv();
   void doTaskParseResources();
   void doTaskFloorplan();
-  void doTaskGDSGen();
   void parseXml(char*);
 
   // member
@@ -76,12 +74,15 @@ inline Flow& Flow::getInstance(const int argc, char** argv) {
   singleton.set_argc(argc);
   singleton.set_argv(argv);
 
+  log_init();
+  
   return singleton;
 }
 
 inline void Flow::doTaskEnd() {
   assert(_step == kEnd);
-  printf("\n----- EDA_CHALLENGE_Q4 END -----\n");
+  g_log << "\n----- EDA_CHALLENGE_Q4 END -----\n";
+  log_close();
 }
 
 }  // namespace EDA_CHALLENGE_Q4
