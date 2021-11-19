@@ -179,7 +179,7 @@ class VCG {
   void place_col(ModuleHelper*, std::map<uint8_t, bool>&);
   void place_row(ModuleHelper*, std::map<uint8_t, bool>&);
   void place_whe(ModuleHelper*, std::map<uint8_t, bool>&);
-  void place_node(VCGNode*, float, float);
+  void visit_single(VCGNode*);
   void make_helper_map(std::vector<ModuleHelper*>&);
   bool is_froms_visited(GridType&, std::map<uint8_t, bool>&);
   std::priority_queue<VCGNode*, std::vector<VCGNode*>, CmpVCGNodeMoCol> make_col_visit_queue(ModuleHelper*);
@@ -189,6 +189,7 @@ class VCG {
   Point cal_x_range(VCGNode*, float);
   void set_module_box(uint8_t);
   std::map<uint8_t, std::set<uint8_t>> make_in_edge_list(GridType&);
+  void legalize(VCGNode*);
 
 
   // static

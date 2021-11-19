@@ -326,22 +326,9 @@ void VCG::find_best_place() {
   // slice
   auto modules = slice();
   // pick
-  std::sort(modules.begin(), modules.end(), cmp_module_priority);
   auto helpers = make_pick_helpers(modules);
-  for (auto helper : helpers) {
-    pick(helper);
-  }
-  assert(pick_done());
   make_helper_map(helpers);
-  // place
-  // place_bad(); // bad result
   place();
-  g_log << "place order: ";
-  for (auto id: _place_stack) {
-    g_log << std::to_string(id) << ", ";
-  }
-  g_log << "\n";
-  g_log.flush();
 }
 
 // get the smallest indivisible modules, and their order rely on slicing times
@@ -1206,7 +1193,7 @@ void VCG::place_module(ModuleHelper* target, std::map<uint8_t, bool>& visited) {
       place_whe(target, visited);
       break;
     case kMoSingle: 
-      place_node(get_node(target->_first_pick) , 1, 1);
+      visit_single(get_node(target->_first_pick) );
       visited[target->_first_pick] = true;
       break;
 
@@ -1267,7 +1254,7 @@ void VCG::place_sin(ModuleHelper* target, std::map<uint8_t, bool>& visited) {
   if (target->_first_pick == 0 || target->_first_pick == get_vertex_num() - 1) return;
   
   auto node = get_node(target->_first_pick);
-  place_node(node, 1, 1);
+  visit_single(node);
 
   return;
 
@@ -1357,14 +1344,40 @@ void VCG::place_col(ModuleHelper* target, std::map<uint8_t, bool>& visited) {
   assert(target && target->_type == kMoColumn);
 
   auto queue = make_col_visit_queue(target);
+  assert(queue.size());
+  auto first_node = queue.top();
+  queue.pop();
 
-  // down-top 
+  auto first_cell = get_cell_fits_min_ratioWH(first_node->get_id());
+  do_pick_cell(first_node->get_id(), first_cell);
+  visited[first_node->get_id()] = true;
+  _place_stack.push_back(first_node->get_id());
+
+  Rectangle box(first_cell->get_c1(), first_cell->get_c3());
+  
+  legalize(first_node);
+
+  auto last_node = first_node;
+  // down -> top 
   while (queue.size()) {
-    auto node = queue.top();
+    auto cur_node = queue.top();
     queue.pop();
 
-    place_node(node, 1, 1);
-    visited[node->get_id()] = true;
+    auto cell_type = get_cell_type(cur_node->get_id());
+    auto constraint = get_constraint_y(last_node->get_id(), cur_node->get_id());
+    auto bests = _cell_man->choose_cells(kDeathCol, cell_type, box,
+                                        constraint._x, constraint._y);
+    ASSERT(bests.size(), "No cells to pick");
+    do_pick_cell(cur_node->get_id(), bests[0]);
+
+    visited[cur_node->get_id()] = true;
+    _place_stack.push_back(cur_node->get_id());
+    
+    box._c3._x = std::max(box.get_width(), (int)bests[0]->get_width());
+    box._c3._y = box.get_height() + constraint._x + bests[0]->get_height();
+
+    legalize(cur_node);
+    last_node = cur_node;
   }
 
   set_module_box(target->_first_pick);
@@ -1541,35 +1554,13 @@ std::vector<Cell*> VCG::get_left_overlap_y_cells(VCGNode* cur_node) {
   return col_cells;
 }
 
- void VCG::place_node(VCGNode* target, float flex_x, float flex_y) {
-  assert( target && 0 <= flex_x && flex_x <= 1 && 0 <= flex_y && flex_y <= 1);
+ void VCG::visit_single(VCGNode* target) {
+  assert( target);
 
   if (target->get_type() == kVCG_START || target->get_type() == kVCG_END) return;
-
-  auto tar_cell = target->get_cell();
-  assert(tar_cell);
-
-  auto y_range = cal_y_range(target, flex_y);
-  if (y_range._x < y_range._y) {
-    tar_cell->set_y_range(y_range);
-    tar_cell->set_y(y_range._x + (1 - flex_y) * (y_range._y - y_range._x));
-  } else {
-    // debug
-    tar_cell->set_y(y_range._x + (1 - flex_y) * (y_range._y - y_range._x));
-    // gen_GDS();
-    // TODO();
-  }
-
-  auto x_range = cal_x_range(target, flex_x);
-  if (x_range._x < x_range._y) {
-    tar_cell->set_x_range(x_range);
-    tar_cell->set_x(x_range._x + (1 - flex_x)* (x_range._y - x_range._x));
-  } else {
-    // debug
-    tar_cell->set_x(x_range._x + (1 - flex_x)* (x_range._y - x_range._x));
-    // gen_GDS();
-    // TODO();
-  }
+  auto cell = get_cell_fits_min_ratioWH(target->get_id());
+  do_pick_cell(target->get_id(), cell);
+  legalize(target);
 
   _place_stack.push_back(target->get_id());
  }
@@ -1578,13 +1569,41 @@ void VCG::place_row(ModuleHelper* target, std::map<uint8_t, bool>& visited) {
   assert(target && target->_type == kMoRow);
 
   auto queue = make_row_visit_queue(target);
+  assert(queue.size());
+  auto first_node = queue.top();
+  queue.pop();
 
+  auto first_cell = get_cell_fits_min_ratioWH(first_node->get_id());
+  do_pick_cell(first_node->get_id(), first_cell);
+  visited[first_node->get_id()] = true;
+  _place_stack.push_back(first_node->get_id());
+
+  Rectangle box(first_cell->get_c1(), first_cell->get_c3());
+  
+  legalize(first_node);
+  
+  auto last_node = first_node;
+  // left -> right
   while (queue.size()) {
-    auto node = queue.top();
+    auto cur_node = queue.top();
     queue.pop();
 
-    place_node(node, 1, 1);
-    visited[node->get_id()] = true;
+    auto cell_type = get_cell_type(cur_node->get_id());
+    auto constraint = get_constraint_x(last_node->get_id(), cur_node->get_id());
+    auto bests = _cell_man->choose_cells(kDeathRow, cell_type, box, 
+                                              constraint._x, constraint._y);
+    ASSERT(bests.size(), "No cells to pick");
+    do_pick_cell(cur_node->get_id(), bests[0]);
+
+    visited[cur_node->get_id()] = true;
+    _place_stack.push_back(cur_node->get_id());
+
+    box._c3._x = box.get_width() + constraint._x + bests[0]->get_width();
+    box._c3._y = std::max(box.get_height(), (int)bests[0]->get_height());
+
+    legalize(cur_node);
+
+    last_node = cur_node;
   }
 
   set_module_box(target->_first_pick);
@@ -1614,11 +1633,17 @@ void VCG::place_whe(ModuleHelper* target, std::map<uint8_t, bool>& visited) {
 
   auto queue = make_whe_visit_queue(target); 
   while (queue.size()) {
-    auto node = get_node(queue.front());
+    auto cur_node = get_node(queue.front());
     queue.pop();
 
-    place_node(node, 1, 1);
-    visited[node->get_id()] = true;
+    auto best = get_cell_fits_min_ratioWH(cur_node->get_id());
+    ASSERT(best, "No cells to pick");
+    do_pick_cell(cur_node->get_id(), best);
+    
+    visited[cur_node->get_id()] = true;
+    _place_stack.push_back(cur_node->get_id());
+
+    legalize(cur_node);
   }
   
   set_module_box(target->_first_pick);
@@ -1689,6 +1714,36 @@ std::map<uint8_t, std::set<uint8_t>> VCG::make_in_edge_list(GridType& module) {
   }
 
   return ret;
+}
+
+void VCG::legalize(VCGNode* target) {
+  assert(target);
+  auto tar_cell = target->get_cell();
+  assert(tar_cell);
+
+  float flex_x = 1;
+  float flex_y = 1;
+  auto y_range = cal_y_range(target, flex_y);
+  if (y_range._x < y_range._y) {
+    tar_cell->set_y_range(y_range);
+    tar_cell->set_y(y_range._x + (1 - flex_y) * (y_range._y - y_range._x));
+  } else {
+    // debug
+    tar_cell->set_y(y_range._x + (1 - flex_y) * (y_range._y - y_range._x));
+    // gen_GDS();
+    // TODO();
+  }
+
+  auto x_range = cal_x_range(target, flex_x);
+  if (x_range._x < x_range._y) {
+    tar_cell->set_x_range(x_range);
+    tar_cell->set_x(x_range._x + (1 - flex_x)* (x_range._y - x_range._x));
+  } else {
+    // debug
+    tar_cell->set_x(x_range._x + (1 - flex_x)* (x_range._y - x_range._x));
+    // gen_GDS();
+    // TODO();
+}
 }
 
 }  // namespace  EDA_CHALLENGE_Q4
