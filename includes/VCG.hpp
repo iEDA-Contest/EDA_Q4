@@ -1,6 +1,7 @@
 #ifndef __VCG_HPP_
 #define __VCG_HPP_
 
+#include <list>
 #include <queue>
 #include <set>
 
@@ -12,6 +13,21 @@
 namespace EDA_CHALLENGE_Q4 {
 
 enum ModuleType { kMoColumn, kMoRow, kMoWheel, kMoSingle };
+
+class ModuleHelper;
+
+class MergeBox {
+  public:
+  // constructor
+  MergeBox();
+  ~MergeBox();
+
+  // members
+  MergeBox* _smaller;
+  Rectangle* _box;
+  ModuleHelper* _pre;
+};
+
 /**
  * @brief pick recommendation
  */
@@ -21,13 +37,25 @@ class ModuleHelper {
   ModuleHelper();
   ~ModuleHelper();
 
+  // getter
+  auto get_merge() const { return _merge; }
+
+  // setter
+
+  // function
+  void insert_merge(MergeBox*);
+
+
   // members
   GridType _module;
-  uint8_t _first_pick;  // cell pick order recommended
+  uint8_t _biggest;     // may be the biggest cell in this module
   ModuleType _type;     // indicate relative position between cells
   uint8_t _cell_num;    // cell num should be picked
   Rectangle* _box;      // bounding box of this module
   uint8_t _first_place; // cell place order topological    
+
+ private:
+  MergeBox* _merge;
 };
 
 enum VCGNodeType { kVCG_START, kVCG_MEM, kVCG_SOC, kVCG_END };
@@ -57,6 +85,7 @@ class VCGNode {
   auto get_max_column_index() const { return _max_column_index; }
   auto get_column_index() const { return  _max_column_index - _h_placeholder + 1; }
   auto get_max_row_index() const { return _max_row_index; }
+  auto get_row_index() const { return _max_row_index - _v_placeholder + 1; }
 
   // setter
   void set_id(uint8_t id) { _id = id; }
@@ -118,7 +147,6 @@ class VCG {
   CellType get_cell_type(uint8_t);
   VCGNodeType get_node_type(uint8_t);
   CellPriority get_priority(VCGNodeType);
-  // int get_column_index(uint8_t);
 
   // setter
   void set_cell_man(CellManager*);
@@ -149,9 +177,13 @@ class VCG {
   std::map<uint8_t, std::vector<uint8_t>> get_in_edge_list();
   std::vector<Cell*> get_colomn_cells(int);
   std::vector<Cell*> get_left_overlap_y_cells(VCGNode*);
+  std::set<uint8_t> get_tos(ModuleHelper*);
+  std::set<uint8_t> get_right_id_set(ModuleHelper*);
+  std::set<uint8_t> get_ids_in_helper(ModuleHelper*);
 
   // setter
   void set_id_grid(size_t, size_t, uint8_t);
+  void set_module_box(uint8_t);
 
   // function
   void init_tos();
@@ -159,17 +191,6 @@ class VCG {
   void debug();
   std::vector<GridType> slice();
   std::vector<ModuleHelper*> make_pick_helpers(std::vector<GridType>&);
-  void pick(ModuleHelper*);
-  void pick_first(ModuleHelper*);
-  void pick_column(ModuleHelper*);
-  void pick_row(ModuleHelper*);
-  void pick_wheel(ModuleHelper*);
-  bool pick_done();
-  // void place_bad();
-  // void place_y_legalize();
-  // void place_cell_y_legalize(uint8_t);
-  // void place_x_legalize();
-  // void place_cell_x_legalize(uint8_t);
   bool is_first_column(uint8_t);
   bool is_overlap_y(Cell*, Cell*);
   bool is_overlap_x(Cell*, Cell*);
@@ -187,10 +208,15 @@ class VCG {
   std::queue<uint8_t> make_whe_visit_queue(ModuleHelper*);
   Point cal_y_range(VCGNode*, float);
   Point cal_x_range(VCGNode*, float);
-  void set_module_box(uint8_t);
   std::map<uint8_t, std::set<uint8_t>> make_in_edge_list(GridType&);
   void legalize(VCGNode*);
-
+  void merge_box(ModuleHelper*);
+  bool is_tos_placed(ModuleHelper*);
+  bool is_placed(uint8_t);
+  void merge_all_tos(ModuleHelper*);
+  void merge_with_tos(ModuleHelper*);
+  bool is_right_module_fusible(ModuleHelper*);
+  void merge_with_right(ModuleHelper*);
 
   // static
   static bool cmp_module_priority(GridType&, GridType&);
@@ -205,6 +231,8 @@ class VCG {
   Constraint* _constraint;
   std::map<uint8_t, ModuleHelper*> _helper_map;
   std::vector<uint8_t> _place_stack;
+  std::list<MergeBox*> _merges;     // mainly for release
+  size_t _last_merge_id;
 };
 
 
@@ -337,13 +365,17 @@ inline bool VCGNode::is_first_column() {
 // ModuleHelper
 
 inline ModuleHelper::ModuleHelper()
-  :_first_pick(0), _type(kMoSingle), _cell_num(0){
+  :_biggest(0), _type(kMoSingle), _cell_num(0) {
   _module.resize(0);
   _box = new Rectangle();
+  _merge = nullptr;
 }
 
 inline ModuleHelper::~ModuleHelper()  {
-  delete(_box);
+  delete _box;
+  _box = nullptr;
+
+  _merge = nullptr; // Must Not release here
 }
 
 // VCG
@@ -477,23 +509,6 @@ inline std::map<uint8_t, std::vector<uint8_t>> VCG::get_in_edge_list() {
   return ret;
 }
 
-// inline int VCG::get_column_index(uint8_t check) {
-//   int ret = -1;
-
-//   int tmp = -1;
-//   for (auto column : _id_grid) {
-//     ++tmp;
-//     for (auto id : column) {
-//       if (id == check) {
-//         ret = tmp;
-//         continue; 
-//       }
-//     }
-//   }
-
-//   return ret;
-// }
-
 inline bool CmpVCGNodeTopology::operator()(VCGNode* n1, VCGNode* n2) {
   if (n1 == nullptr || n2 == nullptr) return false;
 
@@ -528,6 +543,44 @@ inline bool CmpVCGNodeMoRow::operator()(VCGNode* n1, VCGNode* n2) {
   if (n1 == nullptr || n2 == nullptr) return false;
 
   return n1->get_column_index() > n2->get_column_index();
+}
+
+inline MergeBox::MergeBox(): _smaller(nullptr), _pre(nullptr) {
+  _box = new Rectangle();
+}
+
+inline MergeBox::~MergeBox() {
+  delete _box;
+  _box = nullptr;
+
+  // Must Not release here.
+  _smaller = nullptr; 
+  _pre = nullptr;     
+}
+
+inline void ModuleHelper::insert_merge(MergeBox* merge) {
+  if (merge == nullptr) return;
+
+  if (_merge == nullptr) {
+    _merge = merge;
+  } else {
+    MergeBox* p = _merge;
+    _merge = merge;
+    _merge->_smaller = p;
+  }
+}
+
+inline std::set<uint8_t> VCG::get_ids_in_helper(ModuleHelper* helper) {
+  assert(helper);
+
+  std::set<uint8_t> ret;
+  for (auto column : helper->_module) {
+    for (auto id : column) {
+      ret.insert(id);
+    }
+  }
+
+  return ret;
 }
 
 }  // namespace EDA_CHALLENGE_Q4

@@ -69,6 +69,7 @@ void Flow::doTaskParseResources() {
   _constraint_man = new ConstraintManager(_parser->get_tokens());
   _cell_man = new CellManager(_conf_man);
   delete _parser;
+  _parser = nullptr;
 }
 
 void Flow::parseXml(char* file) {
@@ -113,6 +114,7 @@ void Flow::doTaskFloorplan() {
   }
 
   delete _parser;
+  _parser = nullptr;
 }
 
 

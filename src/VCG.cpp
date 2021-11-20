@@ -7,7 +7,8 @@ namespace EDA_CHALLENGE_Q4 {
 
 size_t VCG::_gds_file_num = 0;
 
-VCG::VCG(Token_List& tokens) : _cell_man(nullptr), _constraint(nullptr) {
+VCG::VCG(Token_List& tokens) : _cell_man(nullptr), _constraint(nullptr),
+_last_merge_id(0) {
   _adj_list.push_back(new VCGNode(kVCG_END));
   VCGNode* start = new VCGNode(kVCG_START);
 
@@ -105,6 +106,8 @@ VCG::~VCG() {
   _id_grid.clear();
 
   delete _cell_man;
+  _cell_man = nullptr;
+
   _constraint = nullptr;  // must not release here!
 
   std::set<ModuleHelper*> de_set;
@@ -115,7 +118,13 @@ VCG::~VCG() {
   for (auto helper: de_set) {
     delete helper;
   }
+  de_set.clear();
 
+  for (auto merge : _merges) {
+    delete merge;
+    merge->_smaller = nullptr;
+  }
+  _merges.clear();
 }
 
 /**
@@ -329,6 +338,7 @@ void VCG::find_best_place() {
   auto helpers = make_pick_helpers(modules);
   make_helper_map(helpers);
   place();
+  // 
 }
 
 // get the smallest indivisible modules, and their order rely on slicing times
@@ -421,7 +431,7 @@ std::vector<ModuleHelper*> VCG::make_pick_helpers(std::vector<GridType>& modules
 
     // make pick recommendation
     ModuleHelper* helper = new ModuleHelper();
-    helper->_first_pick = freq_sorted.rbegin()->second;
+    helper->_biggest = freq_sorted.rbegin()->second;
     helper->_module = m;
     helper->_cell_num = freq_sorted.size();
     if (freq_sorted.size() == 1) {
@@ -440,28 +450,6 @@ std::vector<ModuleHelper*> VCG::make_pick_helpers(std::vector<GridType>& modules
   return ret;
 }
 
-void VCG::pick(ModuleHelper* helper) {
-  assert(helper);
-  pick_first(helper);
-
-  switch (helper->_type) {
-    case kMoColumn:
-      pick_column(helper);
-      break;
-    case kMoRow:
-      pick_row(helper);
-      break;
-    case kMoWheel:
-      pick_wheel(helper);
-      break;
-    case kMoSingle:
-      assert(get_cell(helper->_first_pick) != nullptr);
-      break;
-    default:
-      assert(0);
-  }
-}
-
 CellPriority VCG::get_priority(VCGNodeType type) {
   switch (type) {
     case kVCG_MEM:
@@ -471,69 +459,6 @@ CellPriority VCG::get_priority(VCGNodeType type) {
 
     default:
       return kPrioNull;
-  }
-}
-
-void VCG::pick_first(ModuleHelper* helper) {
-  assert(helper);
-  auto best = get_cell_fits_min_ratioWH(helper->_first_pick);
-
-  if (best) {
-    do_pick_cell(helper->_first_pick, best);
-  }
-}
-
-void VCG::pick_column(ModuleHelper* helper) {
-  ASSERT(helper->_module.size() == 1, "Module should be column type");
-
-  size_t up, down, cur;  // index
-  size_t end = helper->_module[0].size();
-  // find cur
-  for (cur = 0; cur < end; ++cur) {
-    if (helper->_module[0][cur] == helper->_first_pick) {
-      break;
-    }
-  }
-  up = cur;
-  down = cur;
-
-  Cell* first = get_cell(helper->_first_pick);
-  ASSERT(first != nullptr, "first node should be pickd");
-  Rectangle box({0, 0}, {first->get_width(), first->get_height()});
-  std::map<uint8_t, bool> picked;
-  picked[helper->_first_pick] = true;
-
-  // BFS from cur, in a column
-  auto& column = helper->_module[0];
-  while (picked.size() < helper->_cell_num) {
-    // up
-    while (up > 0 && picked[column[up]] == true) --up;
-    if (picked[column[up]] == false) {
-      CellType target = get_cell_type(column[up]);
-      auto constraint = get_constraint_y(column[up], column[up + 1]);
-      auto bests = _cell_man->choose_cells(kDeathCol, target, box,
-                                           constraint._x, constraint._y);
-      ASSERT(bests.size(), "No cells to pick");
-      do_pick_cell(column[up], bests[0]);
-      picked[column[up]] = true;
-      // box
-      box._c3._x = std::max(box.get_width(), (int)bests[0]->get_width());
-      box._c3._y = box.get_height() + constraint._x + bests[0]->get_height();
-    }
-    // down
-    while (down < end - 1 && picked[column[down]] == true) ++down;
-    if (picked[column[down]] == false) {
-      CellType target = get_cell_type(column[down]);
-      auto constraint = get_constraint_y(column[down - 1], column[down]);
-      auto bests = _cell_man->choose_cells(kDeathCol, target, box,
-                                           constraint._x, constraint._y);
-      ASSERT(bests.size(), "No cells to pick");
-      do_pick_cell(column[down], bests[0]);
-      picked[column[down]] = true;
-      // box
-      box._c3._x = std::max(box.get_width(), (int)bests[0]->get_width());
-      box._c3._y = box.get_height() + constraint._x + bests[0]->get_height();
-    }
   }
 }
 
@@ -673,60 +598,6 @@ Point VCG::get_constraint_x(uint8_t id) {
   return ret;
 }
 
-void VCG::pick_row(ModuleHelper* helper) {
-  ASSERT(get_max_row(helper->_module) == 1, "Module should be row type");
-
-  size_t left, right, cur;  // index
-  size_t end = helper->_module.size();
-  // find cur
-  for (cur = 0; cur < end; ++cur) {
-    if (helper->_module[cur][0] == helper->_first_pick) {
-      break;
-    }
-  }
-  left = cur;
-  right = cur;
-
-  Cell* first = get_cell(helper->_first_pick);
-  ASSERT(first != nullptr, "first node should be picked");
-  Rectangle box({0, 0}, {first->get_width(), first->get_height()});
-  std::map<uint8_t, bool> picked;
-  picked[helper->_first_pick] = true;
-
-  // BFS from cur, in a row
-  auto& row = helper->_module;
-  while (picked.size() < helper->_cell_num) {
-    // left
-    while (left > 0 && picked[row[left][0]] == true) --left;
-    if (picked[row[left][0]] == false) {
-      CellType target = get_cell_type(row[left][0]);
-      auto constraint = get_constraint_x(row[left][0], row[left + 1][0]);
-      auto bests = _cell_man->choose_cells(kDeathRow, target, box,
-                                           constraint._x, constraint._y);
-      ASSERT(bests.size(), "No cells to pick");
-      do_pick_cell(row[left][0], bests[0]);
-      picked[row[left][0]] = true;
-      // box
-      box._c3._x = box.get_width() + constraint._x + bests[0]->get_width();
-      box._c3._y = std::max(box.get_height(), (int)bests[0]->get_height());
-    }
-    // right
-    while (right < end - 1 && picked[row[right][0]] == true) ++right;
-    if (picked[row[right][0]] == false) {
-      CellType target = get_cell_type(row[right][0]);
-      auto constraint = get_constraint_x(row[right - 1][0], row[right][0]);
-      auto bests = _cell_man->choose_cells(kDeathRow, target, box,
-                                           constraint._x, constraint._y);
-      ASSERT(bests.size(), "No cells to pick");
-      do_pick_cell(row[right][0], bests[0]);
-      picked[row[right][0]] = true;
-      // box
-      box._c3._x = box.get_width() + constraint._x + bests[0]->get_width();
-      box._c3._y = std::max(box.get_height(), (int)bests[0]->get_height());
-    }
-  }
-}
-
 /**
  * @brief pick cell that fits min ratioWH of node
  *
@@ -762,98 +633,6 @@ Cell* VCG::get_cell_fits_min_ratioWH(uint8_t id) {
 
   return best;
 }
-
-void VCG::pick_wheel(ModuleHelper* helper) {
-  for (auto column : helper->_module) {
-    for (auto id : column) {
-      auto best = get_cell_fits_min_ratioWH(id);
-      if (best) {
-        do_pick_cell(id, best);
-      }
-    }
-  }
-}
-
-bool VCG::pick_done() {
-  bool ret = false;
-  for (auto node : _adj_list) {
-    auto node_type = node->get_type();
-    if (node_type == kVCG_START || node_type == kVCG_END) continue;
-    ret |= node->get_cell() == nullptr;
-    if (ret) {
-      return ret;
-    }
-  }
-
-  ret |= _cell_man->get_mems_num() == 0 && _cell_man->get_socs_num() == 0;
-  return ret;
-}
-
-/*
-void VCG::place_bad() {
-  // place_y_legalize();
-  // place_x_legalize();
-}
-*/
-
-/**
- * @brief place each cell and legalize their y coordinate
- *
- */
-/*
-void VCG::place_y_legalize() {
-  std::queue<VCGNode*> queue;
-  queue.push(_adj_list[_adj_list.size() - 1]);
-  std::map<uint8_t, bool> visited;
-  auto in_edges = get_in_edge_list();
-
-  // topological sort
-  while (queue.size()) {
-    auto node = queue.front();
-    queue.pop();
-
-    // visit
-    place_cell_y_legalize(node->get_id());
-    visited[node->get_id()] = true;
-
-    uint8_t id = 0;
-    for (auto& ins : in_edges) {
-      ins.erase(
-          std::remove_if(ins.begin(), ins.end(),
-                         [node](auto in) { return in == node->get_id(); }),
-          ins.end());
-
-      if (ins.size() == 0) {
-        if (visited.count(id) == 0) {
-          queue.push(get_node(id));
-          visited[id] = false;
-        }
-      }
-
-      ++id;
-    }
-
-  }  // end (queue.size())
-}
-*/
-/*
-void VCG::place_cell_y_legalize(uint8_t id) {
-  auto target = get_node(id);
-  auto obj_type = target->get_type();
-  if (obj_type == kVCG_START || obj_type == kVCG_END || target->is_from_start())
-    return;
-
-  auto base = target->get_min_from();
-  assert(base != nullptr);
-  auto constraint = get_constraint_y(target->get_id(), base->get_id());
-  auto tar_cell = target->get_cell();
-  auto base_cell = base->get_cell();
-  assert(tar_cell != nullptr && base_cell != nullptr);
-
-  auto base_point = base_cell->get_positon();
-  tar_cell->set_y(base_point._y + base_cell->get_height() + constraint._x);
-}
-*/
 
 void VCG::gen_GDS() {
 #ifndef GDS
@@ -950,65 +729,6 @@ void VCG::gen_GDS() {
 
   gds.close();
 }
-/*
-void VCG::place_x_legalize() {
-  std::queue<VCGNode*> queue;
-  queue.push(_adj_list[_adj_list.size() - 1]);
-  std::map<uint8_t, bool> visited;
-  auto in_edges = get_in_edge_list();
-
-  // topological sort
-  while (queue.size()) {
-    auto node = queue.front();
-    queue.pop();
-
-    // visit
-    place_cell_x_legalize(node->get_id());
-    visited[node->get_id()] = true;
-
-    uint8_t id = 0;
-    for (auto& ins : in_edges) {
-      ins.erase(
-          std::remove_if(ins.begin(), ins.end(),
-                         [node](auto in) { return in == node->get_id(); }),
-          ins.end());
-
-      if (ins.size() == 0) {
-        if (visited.count(id) == 0) {
-          queue.push(get_node(id));
-          visited[id] = false;
-        }
-      }
-
-      ++id;
-    }
-
-  }  // end (queue.size())
-}
-*/
-
-/*
-void VCG::place_cell_x_legalize(uint8_t id) {
-  auto target = get_node(id);
-  auto obj_type = target->get_type();
-  if (obj_type == kVCG_START || obj_type == kVCG_END || is_first_column(id))
-    return;
-
-  auto tar_cell = target->get_cell();
-  assert(tar_cell);
-
-  auto lefts = get_left_cells(id);
-  for (auto left : lefts) {
-    if (is_overlap_y(left, tar_cell)) {
-      auto constraint =
-          get_constraint_x(left->get_node_id(), tar_cell->get_node_id());
-      auto x = std::max(tar_cell->get_x(),
-                        left->get_x() + left->get_width() + constraint._x);
-      tar_cell->set_x(x);
-    }
-  }
-}
-*/
 
 /**
  * @brief get cells in left column next to current column
@@ -1147,7 +867,7 @@ void VCG::make_helper_map(std::vector<ModuleHelper*>& helpers) {
   g0[0].push_back(0);
   _helper_map[0] = new ModuleHelper();
   _helper_map[0]->_cell_num = 1;
-  _helper_map[0]->_first_pick = 0;
+  _helper_map[0]->_biggest = 0;
   _helper_map[0]->_type = kMoSingle;
   _helper_map[0]->_module = g0;
   // start node 
@@ -1156,7 +876,7 @@ void VCG::make_helper_map(std::vector<ModuleHelper*>& helpers) {
   g1[0].push_back(start);
   _helper_map[start] = new ModuleHelper();
   _helper_map[start]->_cell_num = 1;
-  _helper_map[start]->_first_pick = start;
+  _helper_map[start]->_biggest = start;
   _helper_map[start]->_type = kMoSingle;
   _helper_map[start]->_module = g1;
 }
@@ -1193,13 +913,15 @@ void VCG::place_module(ModuleHelper* target, std::map<uint8_t, bool>& visited) {
       place_whe(target, visited);
       break;
     case kMoSingle: 
-      visit_single(get_node(target->_first_pick) );
-      visited[target->_first_pick] = true;
+      visit_single(get_node(target->_biggest) );
+      visited[target->_biggest] = true;
       break;
 
     default: assert(0);
   }
   
+  set_module_box(target->_biggest);
+  merge_box(target);
 }
 
 void VCG::init_column_row_index() {
@@ -1251,14 +973,14 @@ void VCG::init_column_row_index() {
 void VCG::place_sin(ModuleHelper* target, std::map<uint8_t, bool>& visited) {
   assert(target && target->_type == kMoSingle);
 
-  if (target->_first_pick == 0 || target->_first_pick == get_vertex_num() - 1) return;
+  if (target->_biggest == 0 || target->_biggest == get_vertex_num() - 1) return;
   
-  auto node = get_node(target->_first_pick);
+  auto node = get_node(target->_biggest);
   visit_single(node);
 
   return;
 
-  auto cur_node = get_node(target->_first_pick);
+  auto cur_node = get_node(target->_biggest);
   auto cur_cell = cur_node->get_cell();
   assert(cur_node && cur_cell);
 
@@ -1380,7 +1102,6 @@ void VCG::place_col(ModuleHelper* target, std::map<uint8_t, bool>& visited) {
     last_node = cur_node;
   }
 
-  set_module_box(target->_first_pick);
 }
 
 std::priority_queue<VCGNode*, std::vector<VCGNode*>, CmpVCGNodeMoCol> 
@@ -1407,6 +1128,7 @@ Point VCG::cal_y_range(VCGNode* cur_node, float flex) {
   if (cur_node == nullptr) return y_range;
   
   if (cur_node->is_from_start()) {
+    // interposer
     auto constraint = get_constraint_y(cur_node->get_id());
     y_range = {constraint._x, constraint._y};
   } else {
@@ -1431,16 +1153,6 @@ Point VCG::cal_y_range(VCGNode* cur_node, float flex) {
   return y_range;
 }
 
-/**
- * @brief 
- * 
- * 
- * 
- * @param cur_node 
- * @param flex lies in [0, 1]. 0 means x position achieve max constraint while 1 means min
- * @return true 
- * @return false 
- */
 Point VCG::cal_x_range(VCGNode* cur_node, float flex) {
   assert(0 <= flex && flex <= 1);
 
@@ -1448,6 +1160,7 @@ Point VCG::cal_x_range(VCGNode* cur_node, float flex) {
   if (cur_node == nullptr) return x_range;
 
   if (cur_node->is_first_column()){
+    // interposer
     auto constraint = get_constraint_x(cur_node->get_id());
     x_range = {constraint._x, constraint._y};
   } else {
@@ -1481,11 +1194,16 @@ Point VCG::cal_x_range(VCGNode* cur_node, float flex) {
     for (auto cell : y_overlaps) {
       assert(_helper_map.count(cell->get_node_id()));
       auto helper = _helper_map[cell->get_node_id()];
-      boxs.insert(helper->_first_pick);
+      boxs.insert(helper->_biggest);
     }  
     for(auto id : boxs) {
-      auto box = _helper_map[id]->_box;
-      min_x = std::max(min_x, box->_c3._x);
+      auto left_helper = _helper_map[id];
+      auto merge = left_helper->get_merge();
+      if (merge) {
+        min_x = std::max(min_x, merge->_box->_c3._x);
+      } else {
+        min_x = std::max(min_x, left_helper->_box->_c3._x);
+      }
     }
     
     // visual y overlap constraint
@@ -1512,7 +1230,7 @@ Point VCG::cal_x_range(VCGNode* cur_node, float flex) {
  */
 void VCG::set_module_box(uint8_t id) {
   ASSERT(_helper_map.count(id),"No module contains node_id = %d", id);
-
+  if (id == 0 || id == get_vertex_num() - 1) return;
   auto& helper = _helper_map[id];
 
   std::set<uint8_t> id_set;
@@ -1544,14 +1262,14 @@ std::vector<Cell*> VCG::get_left_overlap_y_cells(VCGNode* cur_node) {
   auto cur_cell = cur_node->get_cell();
   assert(cur_cell);
 
-  auto col_cells = get_colomn_cells(cur_node->get_column_index() - 1);
-    // remain cells that constitute constraint
-    col_cells.erase(std::remove_if(
-      col_cells.begin(), col_cells.end(), [this, cur_cell](auto cell) {
-        return !this->is_overlap_y(cell, cur_cell);
-      }
-    ), col_cells.end());
-  return col_cells;
+  auto placed_cells = get_colomn_cells(cur_node->get_column_index() - 1);
+  // remain cells that constitute constraint
+  placed_cells.erase(std::remove_if(
+    placed_cells.begin(), placed_cells.end(), [this, cur_cell](auto cell) {
+      return !this->is_overlap_y(cell, cur_cell);
+    }
+  ), placed_cells.end());
+  return placed_cells;
 }
 
  void VCG::visit_single(VCGNode* target) {
@@ -1606,7 +1324,6 @@ void VCG::place_row(ModuleHelper* target, std::map<uint8_t, bool>& visited) {
     last_node = cur_node;
   }
 
-  set_module_box(target->_first_pick);
 }
 
 std::priority_queue<VCGNode*, std::vector<VCGNode*>, CmpVCGNodeMoRow> 
@@ -1646,7 +1363,6 @@ void VCG::place_whe(ModuleHelper* target, std::map<uint8_t, bool>& visited) {
     legalize(cur_node);
   }
   
-  set_module_box(target->_first_pick);
 }
 
 std::queue<uint8_t> VCG::make_whe_visit_queue(ModuleHelper* helper) {
@@ -1723,6 +1439,7 @@ void VCG::legalize(VCGNode* target) {
 
   float flex_x = 1;
   float flex_y = 1;
+
   auto y_range = cal_y_range(target, flex_y);
   if (y_range._x < y_range._y) {
     tar_cell->set_y_range(y_range);
@@ -1743,7 +1460,296 @@ void VCG::legalize(VCGNode* target) {
     tar_cell->set_x(x_range._x + (1 - flex_x)* (x_range._y - x_range._x));
     // gen_GDS();
     // TODO();
+  }
 }
+
+void VCG::merge_box(ModuleHelper* helper) {
+  assert(helper);
+
+  if (_place_stack.size() <= helper->_cell_num) return;
+
+  auto last_merge_id = _last_merge_id == 0 ? _place_stack[0] : _last_merge_id;
+
+  // _place_stack index
+  size_t index = 0;
+  for (; index < _place_stack.size(); ++index) {
+    if (_place_stack[index] == last_merge_id) {
+      break;
+    }
+  }
+
+  for (;index < _place_stack.size();) {
+    assert(_helper_map.count(_place_stack[index]));
+    auto helper = _helper_map[_place_stack[index]];
+    if (is_tos_placed(helper) /*&& is_tos_froms_placed(helper)*/) {
+      // vertical merge
+      merge_all_tos(helper);
+      merge_with_tos(helper);
+    } else if (is_right_module_fusible(helper)) {
+      merge_with_right(helper);
+    }
+
+    index += helper->_cell_num;
+  }
+
+}
+
+bool VCG::is_tos_placed(ModuleHelper* helper) {
+  assert(helper);
+
+  bool ret = true;
+  for (auto& to_id : get_tos(helper)) {
+    if (!is_placed(to_id)) {
+      ret = false;
+      break;
+    }
+  }
+
+  return ret;
+}
+
+bool VCG::is_placed(uint8_t node_id) {
+  bool ret = false;
+
+  for (auto id : _place_stack) {
+    if (id == node_id) {
+      ret = true;
+      break;
+    }
+  }
+
+  return ret;
+}
+
+void VCG::merge_all_tos(ModuleHelper* target) {
+  assert(target);
+
+  auto tos = get_tos(target);
+  std::set<uint8_t> tos_helper;
+  for (auto to_id : tos) {
+    assert(_helper_map.count(to_id));
+    auto helper = _helper_map[to_id];
+    if (tos_helper.count(helper->_biggest) == 0) {
+      tos_helper.insert(helper->_biggest);
+    }
+  }
+
+  if (tos_helper.size() <= 1) return;
+
+  assert(_helper_map.count(*tos_helper.begin()));
+  auto first = _helper_map[*tos_helper.begin()];
+  auto merge = new MergeBox;
+  merge->_pre = first;
+
+  merge->_box->_c1 = first->_box->_c1;
+  merge->_box->_c3 = first->_box->_c3;
+
+  for (auto id : tos_helper) {
+    assert(_helper_map.count(id));
+    auto helper = _helper_map[id];
+
+    merge->_box->_c1._x = std::min(merge->_box->_c1._x, helper->_box->_c1._x);
+    merge->_box->_c1._y = std::min(merge->_box->_c1._y, helper->_box->_c1._y);
+    merge->_box->_c3._x = std::max(merge->_box->_c3._x, helper->_box->_c3._x);
+    merge->_box->_c3._y = std::max(merge->_box->_c3._y, helper->_box->_c3._y);
+  }
+
+  for (auto id : tos_helper) {
+    assert(_helper_map.count(id));
+    auto helper = _helper_map[id];
+
+    helper->insert_merge(merge);
+  }
+  _merges.push_back(merge);
+
+  // debug
+  g_log << "merge some: ";
+  for (auto id : tos_helper) {
+    g_log << std::to_string(id) << " + ";
+  }
+  g_log << "\n";
+  g_log.flush();
+}
+
+void VCG::merge_with_tos(ModuleHelper* helper) {
+  assert(helper);
+
+  auto merge = new MergeBox();
+  merge->_pre = helper;
+
+  auto last_merge = helper->get_merge();
+  if (last_merge == nullptr) {
+    merge->_box->_c1 = helper->_box->_c1;
+    merge->_box->_c3 = helper->_box->_c3;
+  } else { 
+    merge->_box->_c1 = last_merge->_box->_c1;
+    merge->_box->_c3 = last_merge->_box->_c3;
+  }
+
+  auto tos = get_tos(helper);
+  assert(tos.size());
+  auto to_id = *tos.begin();
+  assert(_helper_map.count(to_id));
+  auto to_helper = _helper_map[to_id];
+  auto to_box = to_helper->get_merge();
+  if (to_box == nullptr) {
+    merge->_box->_c1._x = std::min(merge->_box->_c1._x, to_helper->_box->_c1._x);
+    merge->_box->_c1._y = std::min(merge->_box->_c1._y, to_helper->_box->_c1._y);
+    merge->_box->_c3._x = std::max(merge->_box->_c3._x, to_helper->_box->_c3._x);
+    merge->_box->_c3._y = std::max(merge->_box->_c3._y, to_helper->_box->_c3._y);
+  } else {
+    merge->_box->_c1._x = std::min(merge->_box->_c1._x, to_box->_box->_c1._x);
+    merge->_box->_c1._y = std::min(merge->_box->_c1._y, to_box->_box->_c1._y);
+    merge->_box->_c3._x = std::max(merge->_box->_c3._x, to_box->_box->_c3._x);
+    merge->_box->_c3._y = std::max(merge->_box->_c3._y, to_box->_box->_c3._y);
+  }
+
+  helper->insert_merge(merge);
+  to_helper->insert_merge(merge);
+  _merges.push_back(merge);
+  _last_merge_id = to_helper->_biggest;
+
+  // debug
+  g_log << "merge down-top: " << std::to_string(helper->_biggest)
+        << " + " << std::to_string(to_helper->_biggest) << "\n";
+  g_log.flush();
+}
+
+std::set<uint8_t> VCG::get_tos(ModuleHelper* helper) {
+  assert(helper);
+
+  std::set<uint8_t> ret;
+  for (auto column : helper->_module) {
+    for (auto id : column) {
+      auto node = get_node(id);
+      if(node == nullptr) continue;
+
+      for (auto to: node->get_tos()) {
+        ret.insert(to->get_id());
+      }
+    }
+  }
+
+  return ret;
+}
+
+std::set<uint8_t> VCG::get_right_id_set(ModuleHelper* helper) {
+  assert(helper);
+
+  std::set<uint8_t> cur_right_id_set;
+  for (auto id : helper->_module[helper->_module.size() - 1]) {
+    cur_right_id_set.insert(id);
+  }
+
+  std::set<uint8_t> right_id_set;
+  for (auto id : cur_right_id_set) {
+    auto node = get_node(id);
+    assert(node);
+    auto col = node->get_max_column_index();
+    auto row_min = node->get_row_index();
+    auto row_max = node->get_max_row_index();
+    for (auto row = row_min; row <= row_max; ++row) {
+      if ((size_t)col + 1 < _id_grid.size() 
+       && (size_t)row < _id_grid[col + 1].size()) {
+        right_id_set.insert(_id_grid[col + 1][row]);
+      }
+    }
+  }
+
+  return right_id_set;
+}
+
+bool VCG::is_right_module_fusible(ModuleHelper* helper) {
+  assert(helper);
+
+  auto right_ids = get_right_id_set(helper);
+  if (right_ids.size() == 0) return false;
+
+  std::set<uint8_t> check_id_set;
+  for (auto id : right_ids) {
+    assert(_helper_map.count(id));
+    auto ids = get_ids_in_helper(_helper_map[id]);
+    for (auto id_in_helper : ids) {
+      check_id_set.insert(id_in_helper);
+    }
+  }
+
+  // bottom-right module should be merged before
+  auto pre_merge = helper->get_merge();
+  while (pre_merge) {
+    auto bottom_rights = get_right_id_set(pre_merge->_pre);
+    for (auto id : bottom_rights) {
+      // bottom-right should consider those in check_id_set
+      if (check_id_set.count(id)) continue;  
+
+      assert(_helper_map.count(id));
+      if (_helper_map[id]->get_merge() == nullptr) {
+        return false;
+      }
+    }
+    pre_merge = pre_merge->_smaller;
+  }
+
+  // right module should be palced
+  bool ret = true;
+  for (auto id : check_id_set) {
+    if (!is_placed(id)) {
+      ret = false;
+      break;
+    }
+  }
+
+
+  return ret;
+}
+
+void VCG::merge_with_right(ModuleHelper* helper) {
+  assert(helper);
+
+  auto right_id_set = get_right_id_set(helper);
+
+  std::set<uint8_t> right_helper_set;
+  for (auto id : right_id_set) {
+    if (_helper_map.count(id)) {
+      right_helper_set.insert(_helper_map[id]->_biggest);
+    }
+  }
+
+  if (right_helper_set.size() < 1) return;
+
+  auto merge = new MergeBox();
+  merge->_pre = helper;
+
+  auto last_merge = helper->get_merge();
+  if (last_merge == nullptr) {
+    merge->_box->_c1 = helper->_box->_c1;
+    merge->_box->_c3 = helper->_box->_c3;
+  } else {
+    merge->_box->_c1 = last_merge->_box->_c1;
+    merge->_box->_c3 = last_merge->_box->_c3;
+  }
+
+  for (auto id : right_helper_set) {
+    auto right = _helper_map[id];
+
+    merge->_box->_c1._x = std::min(merge->_box->_c1._x, right->_box->_c1._x);
+    merge->_box->_c1._y = std::min(merge->_box->_c1._y, right->_box->_c1._y);
+    merge->_box->_c3._x = std::max(merge->_box->_c3._x, right->_box->_c3._x);
+    merge->_box->_c3._y = std::max(merge->_box->_c3._y, right->_box->_c3._y);
+  }
+
+  helper->insert_merge(merge);
+  for (auto id : right_helper_set) {
+    auto right = _helper_map[id];
+    right->insert_merge(merge);
+  }
+  _merges.push_back(merge);
+  _last_merge_id = *right_helper_set.begin();
+
+  // debug
+  g_log << "merge left-right: " << std::to_string(helper->_biggest)
+        << " + " << std::to_string(*right_helper_set.begin()) << "\n";
+  g_log.flush(); 
 }
 
 }  // namespace  EDA_CHALLENGE_Q4
