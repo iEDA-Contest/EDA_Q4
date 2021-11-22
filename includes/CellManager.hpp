@@ -47,6 +47,7 @@ class Cell {
   auto get_y_range() const { return _y_range; }
   float get_flex_x() const;
   float get_flex_y() const;
+  auto get_cell_id() const { return _cell_id; }
 
   // setter
   void set_positon(int x, int y) { _c1._x = x, _c1._y = y; }
@@ -59,6 +60,7 @@ class Cell {
   void set_node_id(uint8_t id) { _node_id = id; }
   void set_x_range(Point range) { _x_range = range; }
   void set_y_range(Point range) { _y_range = range; }
+  void set_cell_id(int cell_id) { _cell_id = cell_id; }
   
   // function
   void rotate();
@@ -70,9 +72,10 @@ class Cell {
   uint16_t _width;
   uint16_t _height;
   std::string _refer;
-  uint8_t _node_id;   // this should not be 0, as 0 is end node
+  uint8_t _node_id;    // this should not be 0, as 0 is end node
   Point _x_range;      // if c1 in this range, then x meets constraint
   Point _y_range;      // if c1 in this range, then y meets constraint
+  int _cell_id;
 };
 
 class CellManager {
@@ -124,6 +127,7 @@ inline Cell::Cell(const Cell& c) {
   _height = c.get_height();
   _refer = c.get_refer();
   _node_id = c.get_node_id();
+  _cell_id = c.get_cell_id();
 }
 
 /* rotate the cell and exchange width with height*/

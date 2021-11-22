@@ -41,6 +41,8 @@ class ModuleHelper {
   auto get_merge() const { return _merge; }
 
   // setter
+  void set_merge_null() { _merge = nullptr; }
+  void set_box_init() { _box->_c1 = {0, 0}; _box->_c3 = {0, 0}; }
 
   // function
   void insert_merge(MergeBox*);
@@ -196,7 +198,6 @@ class VCG {
   bool is_overlap_x(Cell*, Cell*);
   void place();
   void place_module(ModuleHelper*, std::map<uint8_t, bool>&);
-  void place_sin(ModuleHelper*, std::map<uint8_t, bool>&);
   void place_col(ModuleHelper*, std::map<uint8_t, bool>&);
   void place_row(ModuleHelper*, std::map<uint8_t, bool>&);
   void place_whe(ModuleHelper*, std::map<uint8_t, bool>&);
@@ -209,7 +210,7 @@ class VCG {
   Point cal_y_range(VCGNode*, float);
   Point cal_x_range(VCGNode*, float);
   std::map<uint8_t, std::set<uint8_t>> make_in_edge_list(GridType&);
-  void legalize(VCGNode*);
+  void try_place(VCGNode*);
   void merge_box(ModuleHelper*);
   bool is_tos_placed(ModuleHelper*);
   bool is_placed(uint8_t);
@@ -217,6 +218,13 @@ class VCG {
   void merge_with_tos(ModuleHelper*);
   bool is_right_module_fusible(ModuleHelper*);
   void merge_with_right(ModuleHelper*);
+  void place_cells_again();
+  void clear_merges();
+  void set_Helpers_merge_null();
+  void clear_Helper_map();
+  void retrieve_all_cells();
+  void do_cell_fits_node(Cell*, VCGNode*);
+  void swap_cell(VCGNode*, VCGNode*);
 
   // static
   static bool cmp_module_priority(GridType&, GridType&);
@@ -256,7 +264,7 @@ inline VCGNode* VCGNode::get_from(size_t n) {
 inline VCGNode::~VCGNode() {
   _froms.clear();
   _tos.clear();
-  _cell = nullptr;
+  _cell = nullptr;  // must not clear _cell here
 }
 
 inline void VCGNode::insert_from(VCGNode* from) {
@@ -319,8 +327,8 @@ inline void VCGNode::show_tos() {
 
 /*Not release memory, please manage it manly!*/
 inline void VCGNode::set_cell_null() {
-  _cell = nullptr;
   _cell->set_node_id(0);
+  _cell = nullptr;
 }
 
 inline VCGNode* VCGNode::get_to(size_t n) {
@@ -372,9 +380,11 @@ inline ModuleHelper::ModuleHelper()
 }
 
 inline ModuleHelper::~ModuleHelper()  {
+  for (auto v : _module) {
+    v.clear();
+  }
   delete _box;
   _box = nullptr;
-
   _merge = nullptr; // Must Not release here
 }
 
@@ -465,12 +475,11 @@ inline void VCG::do_pick_cell(uint8_t id, Cell* cell) {
       _adj_list[id]->get_cell() == nullptr) {
     //
     cell->set_node_id(id);
-    cell->set_refer(cell->get_refer() + std::to_string(id));
     _adj_list[id]->set_cell(cell);
     _cell_man->delete_cell(get_cell_type(id), cell);
 
     // debug
-    g_log << "nodeid = " << std::to_string(id) << ", cell = " << cell->get_refer() << "\n";
+    g_log << "nodeid = " << std::to_string(id) << ", cell_id = " << cell->get_refer() << "\n";
     g_log.flush();
   }
 }
@@ -522,7 +531,7 @@ inline std::vector<Cell*> VCG::get_colomn_cells(int co_id) {
     for(auto id : _id_grid[co_id]){
       if(in_list_set.count(id) == 0) {
         auto cell = get_cell(id);
-        if (cell) {
+        if (cell && is_placed(cell->get_node_id())) {
           ret.push_back(cell);
           in_list_set.insert(id);
         }
@@ -581,6 +590,76 @@ inline std::set<uint8_t> VCG::get_ids_in_helper(ModuleHelper* helper) {
   }
 
   return ret;
+}
+
+inline void VCG::clear_merges() {
+  for (auto merge : _merges) {
+    delete merge;
+
+    // Must not release memory here
+    merge->_smaller = nullptr;
+    merge->_pre = nullptr;
+  }
+  _merges.clear();
+}
+
+/**
+ * @brief Here helps to release memory of _merges
+ * 
+ */
+inline void VCG::set_Helpers_merge_null() {
+  for (auto helper : _helper_map) {
+    helper.second->set_merge_null();
+  }
+
+  clear_merges();
+}
+
+/**
+ * @brief  Here helps to release memory of _merges
+ * 
+ */
+inline void VCG::clear_Helper_map() {
+  set_Helpers_merge_null();
+  std::set<ModuleHelper*> de_set;
+  for (auto helper: _helper_map) {
+    de_set.insert(helper.second);
+  }
+  _helper_map.clear();
+  for (auto helper: de_set) {
+    delete helper;
+  }
+  de_set.clear();
+}
+
+inline void VCG::retrieve_all_cells() {
+  for (auto node : _adj_list) {
+    undo_pick_cell(node->get_id());
+  }
+}
+
+inline void VCG::do_cell_fits_node(Cell* cell, VCGNode* node) {
+  if (!cell || !node) return;
+
+  auto f_cell_ori = fabs(node->get_ratioHV() - cell->get_ratioWH());
+  auto f_cell_rotate = fabs(node->get_ratioHV() - 1 / cell->get_ratioWH());
+  if (f_cell_rotate < f_cell_ori) {
+    cell->rotate();
+  }
+}
+
+inline void VCG::swap_cell(VCGNode* n1, VCGNode* n2) {
+  if (!n1 || !n2) return;
+  auto cell_1 = n1->get_cell();
+  auto cell_2 = n2->get_cell();
+  undo_pick_cell(n1->get_id());
+  undo_pick_cell(n2->get_id());
+
+  do_cell_fits_node(cell_1, n2);
+  do_pick_cell(n2->get_id(), cell_1);
+
+  do_cell_fits_node(cell_2, n1);
+  do_pick_cell(n1->get_id(), cell_2);
 }
 
 }  // namespace EDA_CHALLENGE_Q4

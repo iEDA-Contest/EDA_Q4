@@ -19,6 +19,7 @@ void CellManager::init_cells(CellType type, std::vector<Config*> configs) {
       cell->set_width(conf->get_width());
       cell->set_height(conf->get_height());
       cell->set_refer(conf->get_refer());
+      cell->set_cell_id(conf->get_id_refer() * 1000 + i);
       insert_cell(type, cell);
     }
   }
