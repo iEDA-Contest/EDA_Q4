@@ -225,6 +225,7 @@ class VCG {
   void retrieve_all_cells();
   void do_cell_fits_node(Cell*, VCGNode*);
   void swap_cell(VCGNode*, VCGNode*);
+  Point cal_c3_of_interposer();
 
   // static
   static bool cmp_module_priority(GridType&, GridType&);

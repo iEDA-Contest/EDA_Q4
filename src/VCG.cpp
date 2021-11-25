@@ -667,17 +667,31 @@ void VCG::gen_GDS() {
     gds << "ENDSTR\n\n";
   }
 
-  //
+  // interposer_box_c1
   gds << "BGNSTR\n";
-  gds << "STRNAME box\n";
+  gds << "STRNAME box_c1\n";
   gds << "BOUNDARY\n";
   gds << "LAYER " << std::to_string(get_vertex_num() - 1) << "\n";
   gds << "DATATYPE 0\n";
   gds << "XY\n";
   gds << "0 : 0\n";
-  gds << "0 : 1\n";
-  gds << "1 : 1\n";
-  gds << "1 : 0\n";
+  gds << "0 : 2\n";
+  gds << "2 : 2\n";
+  gds << "2 : 0\n";
+  gds << "0 : 0\n";
+  gds << "ENDEL\n";
+  gds << "ENDSTR\n\n";
+  // interposer_box_c3
+  gds << "BGNSTR\n";
+  gds << "STRNAME box_c3\n";
+  gds << "BOUNDARY\n";
+  gds << "LAYER " << std::to_string(get_vertex_num()) << "\n";
+  gds << "DATATYPE 0\n";
+  gds << "XY\n";
+  gds << "0 : 0\n";
+  gds << "0 : 2\n";
+  gds << "2 : 2\n";
+  gds << "2 : 0\n";
   gds << "0 : 0\n";
   gds << "ENDEL\n";
   gds << "ENDSTR\n\n";
@@ -703,11 +717,17 @@ void VCG::gen_GDS() {
     gds << "ENDEL\n";
   }
 
+  // interposer_box_c1
   gds << "SREF\n";
-  gds << "SNAME box\n";
+  gds << "SNAME box_c1\n";
   gds << "XY  0 : 0\n";  // c1 point
   gds << "ENDEL\n";
-
+  // interposer_box_c3
+  auto c3 = cal_c3_of_interposer();
+  gds << "SREF\n";
+  gds << "SNAME box_c3\n";
+  gds << "XY  " << c3._x << " : " << c3._y << "\n";  // c3 point
+  gds << "ENDEL\n";
 
   // gds end
   gds << "\n\n";
@@ -1092,13 +1112,16 @@ Point VCG::cal_x_range(VCGNode* cur_node, float flex) {
     }
     
     // visual y overlap constraint
-    for (auto cell: y_overlaps) {
+    auto cur_cell = cur_node->get_cell();
+    assert(cur_cell);
+    for (auto id : _place_stack) {
+      auto cell = get_cell(id);
+      assert(cell);
+      if (!is_overlap_y(cell, cur_cell)) continue;
+
       auto constraint = get_constraint_x(cell->get_node_id(), cur_node->get_id());
-      min_x = std::max(min_x, 
-                       cell->get_c3()._x + constraint._x);
-      max_x = max_x == 0 ? cell->get_c3()._x + constraint._y :
-              std::min(max_x, 
-                       cell->get_c3()._x + constraint._y);
+      min_x = std::max(min_x, cell->get_c3()._x + constraint._x);
+      max_x = std::min(max_x, cell->get_c3()._x + constraint._y);
     }
 
     x_range = {min_x, max_x};
@@ -1652,7 +1675,6 @@ void VCG::place_cells_again() {
   _last_merge_id = 0;
   g_log << "\n--- updates cells position ---\n";
   //
-
   std::vector<uint8_t> place_stack;
   place_stack.swap(_place_stack);
   for (size_t index = 0; index < place_stack.size();) {
@@ -1671,6 +1693,45 @@ void VCG::place_cells_again() {
     set_module_box(helper->_biggest);
     merge_box(helper);
   }
+
+}
+
+Point VCG::cal_c3_of_interposer() {
+  int min_y = 0;
+  int max_y = 0;
+  // top
+  for (auto column : _id_grid) {
+    auto cell = get_cell(column[0]);
+    assert(cell);
+    auto constraint = get_constraint_y(cell->get_node_id());
+    min_y = std::max(min_y, cell->get_c3()._y + constraint._x);
+    max_y = max_y == 0 ?
+            cell->get_c3()._y + constraint._y :
+            std::min(max_y, cell->get_c3()._y + constraint._y);
+  }
+
+  // right
+  int min_x = 0;
+  int max_x = 0;
+  if (_id_grid.size()) {
+    auto last_col = _id_grid[_id_grid.size() - 1];
+    for (auto row = 0; (size_t)row < last_col.size(); ++row) {
+      auto cell = get_cell(last_col[row]);
+      assert(cell);
+      auto constraint = get_constraint_x(cell->get_node_id());
+      min_x = std::max(min_x, cell->get_c3()._x + constraint._x);
+      max_x = max_x == 0 ?
+              cell->get_c3()._x + constraint._y :
+              std::min(max_x, cell->get_c3()._x + constraint._y);
+    }
+  }
+
+  // debug
+  g_log << "\n";
+  g_log << "##Interposer_box.x " << min_x << " ~ " << max_x << "\n";
+  g_log << "##Interposer_box.y " << min_y << " ~ " << max_y << "\n";
+
+  return {std::min(min_x, max_x), std::min(min_y, max_y)};
 }
 
 }  // namespace  EDA_CHALLENGE_Q4
