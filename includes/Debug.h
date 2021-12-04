@@ -29,6 +29,8 @@ namespace EDA_CHALLENGE_Q4 {
 
 #define GDS
 
+#define G_LOG
+
 extern std::fstream g_log;
 void log_init();
 void log_close();

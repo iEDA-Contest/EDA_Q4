@@ -12,9 +12,60 @@
 
 namespace EDA_CHALLENGE_Q4 {
 
+class ModuleHelper;
+class VCGNode;
+class PickTerm;
+struct CmpPickTerm;
+typedef std::priority_queue<PickTerm*, std::vector<PickTerm*>, CmpPickTerm> Prio_Pick;
+
 enum ModuleType { kMoColumn, kMoRow, kMoWheel, kMoSingle };
 
-class ModuleHelper;
+struct CmpVCGNodeTopology {
+  bool operator()(VCGNode*, VCGNode*);
+};
+
+struct CmpVCGNodeMoCol {
+  bool operator()(VCGNode*, VCGNode*);
+};
+
+struct CmpVCGNodeMoRow {
+  bool operator()(VCGNode*, VCGNode*);
+};
+
+struct CmpPickTerm {
+  bool operator()(PickTerm*, PickTerm*);
+};
+
+class PickTerm {
+ typedef std::vector<std::pair<int, bool>> Picks_Type;
+ public:
+  // constructor
+  PickTerm() = default;
+  PickTerm(const PickTerm&);
+  PickTerm(Cell*);
+  ~PickTerm();
+
+  // getter
+  auto get_death() const { return _death; }
+  auto get_picks_num() const { return _picks.size(); }
+  auto get_box() const { return _box; }
+  std::vector<int> get_picks();
+
+  // setter
+  void set_death(float death) { _death = death; }
+  void set_box(int, int, int, int);
+  void set_box(const Rectangle&);
+
+  // function
+  bool is_picked(Cell*);
+  void insert(Cell*);
+
+ private:
+  // members
+  Picks_Type _picks;
+  float _death;
+  Rectangle* _box;          // ignore position. Minimal bounding box in theory
+};
 
 class MergeBox {
   public:
@@ -39,25 +90,29 @@ class ModuleHelper {
 
   // getter
   auto get_merge() const { return _merge; }
+  auto get_death() const { return _death; }
 
   // setter
   void set_merge_null() { _merge = nullptr; }
   void set_box_init() { _box->_c1 = {0, 0}; _box->_c3 = {0, 0}; }
+  void set_death(float death) { _death = death; }
 
   // function
   void insert_merge(MergeBox*);
+  void clear_picks();
 
 
   // members
   GridType _module;
-  uint8_t _biggest;     // may be the biggest cell in this module
-  ModuleType _type;     // indicate relative position between cells
-  uint8_t _cell_num;    // cell num should be picked
-  Rectangle* _box;      // bounding box of this module
-  uint8_t _first_place; // cell place order topological    
+  uint8_t _biggest;             // may be the biggest cell in this module
+  ModuleType _type;             // indicate relative position between cells
+  Rectangle* _box;              // bounding box of this module
+  std::vector<uint8_t> _order;  // cell place order topological  
+  Prio_Pick _picks;             // minimal death area picks
 
  private:
   MergeBox* _merge;
+  float _death;                 
 };
 
 enum VCGNodeType { kVCG_START, kVCG_MEM, kVCG_SOC, kVCG_END };
@@ -124,18 +179,6 @@ class VCGNode {
   int _max_row_index;            // the max row index in _id_grid. Start and End is -1
 };
 
-struct CmpVCGNodeTopology {
-  bool operator()(VCGNode*, VCGNode*);
-};
-
-struct CmpVCGNodeMoCol {
-  bool operator()(VCGNode*, VCGNode*);
-};
-
-struct CmpVCGNodeMoRow {
-  bool operator()(VCGNode*, VCGNode*);
-};
-
 class VCG {
  public:
   // constructor
@@ -163,6 +206,10 @@ class VCG {
   void show_id_grid();
   void find_best_place();
   void gen_GDS();
+  void gen_result();
+
+  // members
+  static size_t _gds_file_num;
 
  private:
   // getter
@@ -170,10 +217,10 @@ class VCG {
   std::vector<GridType> get_smaller_module(GridType&, bool min = false);
   std::vector<GridType> get_smaller_module_column(GridType&, bool);
   std::vector<GridType> get_smaller_module_row(GridType&, bool);
-  Point get_constraint_x(uint8_t, uint8_t);
-  Point get_constraint_y(uint8_t, uint8_t);
-  Point get_constraint_x(uint8_t);
-  Point get_constraint_y(uint8_t);
+  Point get_cst_x(uint8_t, uint8_t);
+  Point get_cst_y(uint8_t, uint8_t);
+  Point get_cst_x(uint8_t);
+  Point get_cst_y(uint8_t);
   Cell* get_cell_fits_min_ratioWH(uint8_t);
   std::vector<Cell*> get_left_cells(uint8_t);
   std::map<uint8_t, std::vector<uint8_t>> get_in_edge_list();
@@ -182,6 +229,7 @@ class VCG {
   std::set<uint8_t> get_tos(ModuleHelper*);
   std::set<uint8_t> get_right_id_set(ModuleHelper*);
   std::set<uint8_t> get_ids_in_helper(ModuleHelper*);
+  std::vector<int> get_cell_ids(ModuleHelper*);
 
   // setter
   void set_id_grid(size_t, size_t, uint8_t);
@@ -194,8 +242,9 @@ class VCG {
   std::vector<GridType> slice();
   std::vector<ModuleHelper*> make_pick_helpers(std::vector<GridType>&);
   bool is_first_column(uint8_t);
-  bool is_overlap_y(Cell*, Cell*);
-  bool is_overlap_x(Cell*, Cell*);
+  bool is_overlap_y(Cell*, Cell*, bool);
+  bool is_overlap_x(Cell*, Cell*, bool);
+  bool is_overlap(int, int, int, int, bool);
   void place();
   void place_module(ModuleHelper*, std::map<uint8_t, bool>&);
   void place_col(ModuleHelper*, std::map<uint8_t, bool>&);
@@ -210,7 +259,7 @@ class VCG {
   Point cal_y_range(VCGNode*, float);
   Point cal_x_range(VCGNode*, float);
   std::map<uint8_t, std::set<uint8_t>> make_in_edge_list(GridType&);
-  void try_place(VCGNode*);
+  void try_place(VCGNode*, float flex_x = 1, float flex_y = 1);
   void merge_box(ModuleHelper*);
   bool is_tos_placed(ModuleHelper*);
   bool is_placed(uint8_t);
@@ -225,19 +274,33 @@ class VCG {
   void retrieve_all_cells();
   void do_cell_fits_node(Cell*, VCGNode*);
   void swap_cell(VCGNode*, VCGNode*);
-  Point cal_c3_of_interposer();
+  std::vector<int> cal_c3_of_interposer();
+  void find_possible_combinations();
+  void build_picks(ModuleHelper*);
+  void build_first(ModuleHelper*);
+  void build_picks_col(ModuleHelper*);
+  void build_picks_row(ModuleHelper*);
+  void try_legalize();
+  void fill_id_grid();
+  std::vector<int> check_range_invalid();
+  void fix_x_range(int, int);
+  bool is_froms_cst_meet(uint8_t);
+  bool is_tos_cst_meet(uint8_t);
+  uint8_t fail_cst_id();
+  bool is_box_cst_meet(uint8_t);
+  bool is_overlap(Rectangle, Rectangle, bool);
+  void fix_y_range(int, int);
 
   // static
   static bool cmp_module_priority(GridType&, GridType&);
   static size_t get_module_row(GridType&);
   static size_t get_type_num(GridType&);
-  static size_t _gds_file_num;
 
   // members
   std::vector<VCGNode*> _adj_list;  // Node0 is end, final Node is start
   GridType _id_grid;                // [column][row]
   CellManager* _cell_man;
-  Constraint* _constraint;
+  Constraint* _cst;
   std::map<uint8_t, ModuleHelper*> _helper_map;
   std::vector<uint8_t> _place_stack;
   std::list<MergeBox*> _merges;     // mainly for release
@@ -311,19 +374,21 @@ inline void VCGNode::insert_to(VCGNode* to) {
 }
 
 inline void VCGNode::show_froms() {
-  printf("froms[%d]:", get_id());
+  g_log << "froms[" << std::to_string(get_id()) << "]:";
   for (auto from : _froms) {
-    printf("%2d, ", from->get_id());
+    g_log << std::to_string(from->get_id()) << ", ";
   }
-  printf("\n");
+  g_log << "\n";
+  g_log.flush();
 }
 
 inline void VCGNode::show_tos() {
-  printf("tos[%d]:", get_id());
+  g_log << "tos[" << std::to_string(get_id()) << "]:";
   for (auto to : _tos) {
-    printf("%2d, ", to->get_id());
+    g_log << std::to_string(to->get_id()) << ", ";
   }
-  printf("\n");
+  g_log << "\n";
+  g_log.flush();
 }
 
 /*Not release memory, please manage it manly!*/
@@ -374,19 +439,10 @@ inline bool VCGNode::is_first_column() {
 // ModuleHelper
 
 inline ModuleHelper::ModuleHelper()
-  :_biggest(0), _type(kMoSingle), _cell_num(0) {
+  :_biggest(0), _type(kMoSingle), _death(0) {
   _module.resize(0);
   _box = new Rectangle();
   _merge = nullptr;
-}
-
-inline ModuleHelper::~ModuleHelper()  {
-  for (auto v : _module) {
-    v.clear();
-  }
-  delete _box;
-  _box = nullptr;
-  _merge = nullptr; // Must Not release here
 }
 
 // VCG
@@ -491,8 +547,8 @@ inline Cell* VCG::get_cell(uint8_t id) {
 }
 
 inline void VCG::set_constraint(Constraint* c) {
-  if (c != nullptr && _constraint == nullptr) {
-    _constraint = c;
+  if (c != nullptr && _cst == nullptr) {
+    _cst = c;
   }
 }
 
@@ -594,12 +650,8 @@ inline std::set<uint8_t> VCG::get_ids_in_helper(ModuleHelper* helper) {
 }
 
 inline void VCG::clear_merges() {
-  for (auto merge : _merges) {
+  for (auto merge : _merges) {  
     delete merge;
-
-    // Must not release memory here
-    merge->_smaller = nullptr;
-    merge->_pre = nullptr;
   }
   _merges.clear();
 }
@@ -661,6 +713,135 @@ inline void VCG::swap_cell(VCGNode* n1, VCGNode* n2) {
 
   do_cell_fits_node(cell_2, n1);
   do_pick_cell(n1->get_id(), cell_2);
+}
+
+inline bool PickTerm::is_picked(Cell* c) {
+  assert(c);
+
+  bool ret = false;
+
+  for (auto pair : _picks) {
+    if (c->get_cell_id() == pair.first &&
+        c->get_rotation() == pair.second) {
+      ret = true;
+      break;
+    }
+  }
+
+  return ret;
+}
+
+inline PickTerm::PickTerm(const PickTerm& p) {
+  for (auto id : p._picks) {
+    _picks.push_back(id);
+  }
+  _box = new Rectangle(*p.get_box());
+  _death = p.get_death();
+}
+
+inline void PickTerm::insert(Cell* c) {
+  assert(c);
+
+  if (!is_picked(c)) {
+    _picks.push_back({c->get_cell_id() , c->get_rotation()});
+  }
+}
+
+inline PickTerm::PickTerm(Cell* cell) : _death(0){
+  assert(cell);
+  _picks.push_back({cell->get_cell_id(), cell->get_rotation()});
+  _box = new Rectangle({0, 0}, {cell->get_width(), cell->get_height()});
+}
+
+inline void PickTerm::set_box(const Rectangle& box) {
+  *_box = box;
+}
+
+inline bool CmpPickTerm::operator()(PickTerm* t1, PickTerm* t2) {
+  if (t1 == nullptr || t2 == nullptr) return false;
+
+  auto d1 = t1->get_death();
+  auto d2 = t2->get_death();
+
+  if (d1 < d2) {
+    return true;
+  } else if (d1 > d2) {
+    return false;
+  } else {
+    return t1->get_box()->get_area() < t2->get_box()->get_area();
+  }
+}
+
+inline void ModuleHelper::clear_picks() {
+  while (_picks.size()) {
+    auto term = _picks.top();
+    _picks.pop();
+    delete term;
+  }
+}
+
+inline PickTerm::~PickTerm() {
+  _picks.clear();
+
+  delete _box;
+  _box = nullptr;
+}
+
+inline std::vector<int> PickTerm::get_picks() {
+  std::vector<int> ret;
+
+  for (auto pair : _picks) {
+    ret.push_back(pair.first);
+  }
+
+  return ret;
+}
+
+inline std::vector<int> VCG::get_cell_ids(ModuleHelper* helper) {
+  std::vector<int> ret;
+  if (helper == nullptr) return ret;
+  
+  for (auto node_id : helper->_order) {
+    auto cell = get_cell(node_id);
+    assert(cell);
+    ret.push_back(cell->get_cell_id());
+  }
+
+  return ret;
+}
+
+inline bool VCG::is_overlap_y(Cell* c1, Cell* c2, bool edge) {
+  if (c1 == nullptr || c2 == nullptr) return true;
+
+  auto c1_min_y = c1->get_y();
+  auto c1_max_y = c1_min_y + c1->get_height();
+  auto c2_min_y = c2->get_y();
+  auto c2_max_y = c2_min_y + c2->get_height();
+  return is_overlap(c1_min_y, c1_max_y, c2_min_y, c2_max_y, edge);
+}
+
+inline bool VCG::is_overlap_x(Cell* c1, Cell* c2, bool egde) {
+  if (c1 == nullptr || c2 == nullptr) return true;
+
+  auto c1_min_x = c1->get_x();
+  auto c1_max_x = c1_min_x + c1->get_width();
+  auto c2_min_x = c2->get_x();
+  auto c2_max_x = c2_min_x + c2->get_width();
+
+  return is_overlap(c1_min_x, c1_max_x, c2_min_x, c2_max_x, egde);
+}
+
+inline bool VCG::is_overlap(int c1_min, int c1_max, int c2_min, int c2_max, bool edge) {
+  ASSERT(c1_min <= c1_max && c2_min <= c2_max, "Misuse function");
+
+  return edge ? 
+        !(c1_min > c2_max || c1_max < c2_min) :
+        !(c1_min >= c2_max || c1_max <= c2_min); 
+}
+
+inline bool VCG::is_overlap(Rectangle r1, Rectangle r2, bool edge) {
+  return is_overlap(r1._c1._x, r1._c3._x, r2._c1._x, r2._c3._x, edge)
+      && is_overlap(r1._c1._y, r1._c3._y, r2._c1._y, r2._c3._y, edge);
 }
 
 }  // namespace EDA_CHALLENGE_Q4

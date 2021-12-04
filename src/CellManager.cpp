@@ -8,8 +8,11 @@ CellManager::CellManager(ConfigManager* conf_man) {
   assert(conf_man != nullptr);
   init_cells(kCellTypeMem, conf_man->get_mem_list());
   init_cells(kCellTypeSoc, conf_man->get_soc_list());
+  init_mems_aux();
+  init_socs_aux();  
 }
 
+static int id_deviate = 1000;
 /* initialize _mems or _socs */
 void CellManager::init_cells(CellType type, std::vector<Config*> configs) {
   Cell* cell = nullptr;
@@ -19,48 +22,48 @@ void CellManager::init_cells(CellType type, std::vector<Config*> configs) {
       cell->set_width(conf->get_width());
       cell->set_height(conf->get_height());
       cell->set_refer(conf->get_refer());
-      cell->set_cell_id(conf->get_id_refer() * 1000 + i);
+      cell->set_cell_id(conf->get_id_refer() * id_deviate + i);
       insert_cell(type, cell);
     }
   }
 }
 
-std::vector<Cell*> CellManager::choose_cells(CellPriority prio, ...) {
+std::vector<Cell*> CellManager::choose_cells(bool aux, CellPriority prio, ...) {
   va_list ap;
   va_start(ap, prio);
 
   uint16_t args[4] = {};
-  CellType obj_type = kCellTypeNull;
+  CellType tar_type = kCellTypeNull;
   Rectangle* box;
 
   switch (prio) {
     case kPrioMem:
-      return _mems;
+      return aux ? _mems_aux : _mems;
     case kPrioSoc:
-      return _socs;
+      return aux ? _socs_aux : _socs;
     case kRange:
-      obj_type = (CellType)va_arg(ap, int);
+      tar_type = (CellType)va_arg(ap, int);
       for (int i = 0; i < 4; ++i) {
         args[i] = (uint16_t)va_arg(ap, int);
       }
-      return choose_range(obj_type, args[0], args[1], args[2], args[3]);
+      return choose_range(aux, tar_type, args[0], args[1], args[2], args[3]);
     case kRatioMAX:
-      obj_type = (CellType)va_arg(ap, int);
-      return choose_ratioWH_max(obj_type);
+      tar_type = (CellType)va_arg(ap, int);
+      return choose_ratioWH_max(aux, tar_type);
     case kDeathCol:
-      obj_type = (CellType)va_arg(ap, int);
+      tar_type = (CellType)va_arg(ap, int);
       box = (Rectangle*)va_arg(ap, Rectangle*);
       for (int i = 0; i < 2; ++i) {
         args[i] = (uint16_t)va_arg(ap, int);
       }
-      return choose_death_y(obj_type, *box, args[0], args[1]);
+      return choose_death_y(aux, tar_type, *box, args[0], args[1]);
     case kDeathRow:
-      obj_type = (CellType)va_arg(ap, int);
+      tar_type = (CellType)va_arg(ap, int);
       box = (Rectangle*)va_arg(ap, Rectangle*);
       for (int i = 0; i < 2; ++i) {
         args[i] = (uint16_t)va_arg(ap, int);
       }
-      return choose_death_x(obj_type, *box, args[0], args[1]);
+      return choose_death_x(aux, tar_type, *box, args[0], args[1]);
 
     default:
       PANIC("Unknown CellPriority = %d", prio);
@@ -70,10 +73,10 @@ std::vector<Cell*> CellManager::choose_cells(CellPriority prio, ...) {
   va_end(ap);
 }
 
-std::vector<Cell*> CellManager::choose_range(CellType obj_type, uint16_t w_min,
-                                             uint16_t w_max, uint16_t h_min,
-                                             uint16_t h_max) {
-  std::vector<Cell*>* op_list = get_list(obj_type);
+std::vector<Cell*> CellManager::choose_range(bool aux, CellType tar_type, 
+                                            uint16_t w_min, uint16_t w_max, 
+                                            uint16_t h_min, uint16_t h_max) {
+  std::vector<Cell*>* op_list = get_list(aux, tar_type);
   assert(op_list != nullptr);
 
   std::vector<Cell*> result;
@@ -92,7 +95,7 @@ std::vector<Cell*> CellManager::choose_range(CellType obj_type, uint16_t w_min,
 }
 
 void CellManager::delete_cell(CellType type, Cell* cell) {
-  auto oplist = get_list(type);
+  auto oplist = get_list(false, type);
   if (oplist) {
     for (auto c = oplist->begin(); c != oplist->end(); ++c) {
       if (*c == cell) {
@@ -106,6 +109,7 @@ void CellManager::delete_cell(CellType type, Cell* cell) {
 /**
  * @brief choose cells according to minimal death area in y direction.
  * Here can optimize.
+ * @param aux       visit all cells in correct cell type when true
  * @param target    target cell type
  * @param box       bounding box
  * @param min       min val that should be away from box
@@ -113,10 +117,10 @@ void CellManager::delete_cell(CellType type, Cell* cell) {
  * @return std::vector<Cell*> All cells can directly be set without rotation
  * again.
  */
-std::vector<Cell*> CellManager::choose_death_y(CellType target, Rectangle& box,
-                                               int min, int max) {
+std::vector<Cell*> CellManager::choose_death_y(bool aux, CellType target, 
+                                              Rectangle& box, int min, int max) {
   assert(min <= max);
-  std::vector<Cell*>* op_list = get_list(target);
+  std::vector<Cell*>* op_list = get_list(aux, target);
   assert(op_list != nullptr);
 
   std::map<Cell*, int> area_map;
@@ -142,6 +146,7 @@ std::vector<Cell*> CellManager::choose_death_y(CellType target, Rectangle& box,
  * @brief choose cells according to minimal death area in x direction.
  * Here can optimize.
  *
+ * @param aux       visit all cells in correct cell type when true
  * @param target    target cell type
  * @param box       bounding box
  * @param min       min val that should be away from box
@@ -149,10 +154,10 @@ std::vector<Cell*> CellManager::choose_death_y(CellType target, Rectangle& box,
  * @return std::vector<Cell*> All cells can directly be set without rotation
  * again.
  */
-std::vector<Cell*> CellManager::choose_death_x(CellType target, Rectangle& box,
+std::vector<Cell*> CellManager::choose_death_x(bool aux, CellType target, Rectangle& box,
                                                int min, int max) {
   assert(min <= max);
-  std::vector<Cell*>* op_list = get_list(target);
+  std::vector<Cell*>* op_list = get_list(aux, target);
   assert(op_list != nullptr);
 
   std::map<Cell*, int> death;
@@ -187,6 +192,50 @@ std::vector<Cell*> CellManager::get_min_area_sorted_chose_cells(
   }
 
   return ret;
+}
+
+CellManager::~CellManager() {
+  for (auto m : _mems) {
+    delete m;
+  }
+  _mems.clear();
+  _mems_aux.clear();
+
+  for (auto s : _socs) {
+    delete s;
+  }
+  _socs.clear();
+  _socs_aux.clear();
+
+  _id_map.clear();
+}
+
+CellManager::CellManager(const CellManager& man) {
+  ASSERT(man.get_mems_num() + man.get_socs_num() == man.get_id_map_num(), 
+    "Please return cells into _mems and _socs before using copy constructor");
+
+  size_t num = 0;
+  _mems.resize(man.get_mems_num());
+  for (auto c : man.get_mems()) {
+    auto new_cell = new Cell(*c);
+    _mems[num++] = new_cell;
+    _id_map[new_cell->get_cell_id()] = new_cell;
+  }
+
+  num = 0;
+  _socs.resize(man.get_socs_num());
+  for (auto c : man.get_socs()) {
+    auto new_cell = new Cell(*c);
+    _socs[num++] = new_cell;
+    _id_map[new_cell->get_cell_id()] = new_cell;
+  }
+
+  init_mems_aux();
+  init_socs_aux();
+}
+
+int Cell::get_refer_id() { 
+  return _cell_id / id_deviate;
 }
 
 }  // namespace EDA_CHALLENGE_Q4

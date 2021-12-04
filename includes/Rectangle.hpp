@@ -22,6 +22,7 @@ class Rectangle {
 
   // operator
   bool operator==(const Rectangle&);
+  Rectangle& operator=(const Rectangle&);
 
   // members
   Point _c1; // left bottom
@@ -40,6 +41,12 @@ inline Rectangle::Rectangle(const Rectangle& r) {
 
 inline bool Rectangle::operator==(const Rectangle& r) {
   return _c1 == r._c1 && _c3 == r._c3;
+}
+
+inline Rectangle& Rectangle::operator=(const Rectangle& r) {
+  _c1 = r._c1;
+  _c3 = r._c3;
+  return *this;
 }
 
 } // namespace EDA_CHALLENGE_Q4

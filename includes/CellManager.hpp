@@ -48,6 +48,8 @@ class Cell {
   float get_flex_x() const;
   float get_flex_y() const;
   auto get_cell_id() const { return _cell_id; }
+  int get_refer_id();
+  Rectangle get_box();
 
   // setter
   void set_positon(int x, int y) { _c1._x = x, _c1._y = y; }
@@ -64,6 +66,7 @@ class Cell {
   
   // function
   void rotate();
+  bool is_square() { return _width == _height; }
 
  private:
   // members
@@ -90,33 +93,41 @@ class CellManager {
   auto get_mems_num() const { return _mems.size(); }
   auto get_socs() const { return _socs; }
   auto get_socs_num() const { return _socs.size(); }
+  Cell* get_cell(int);
+  auto get_id_map_num() const { return _id_map.size(); }
 
   // setter
 
   // function
   void insert_cell(CellType, Cell*);
-  std::vector<Cell*> choose_cells(CellPriority, ...);
+  std::vector<Cell*> choose_cells(bool, CellPriority, ...);
   void delete_cell(CellType, Cell*);
+  std::vector<Cell*> retrieve();
+  int cal_cell_area(const std::vector<int>&);
 
  private:
   // getter
-  std::vector<Cell*>* get_list(CellType);
+  std::vector<Cell*>* get_list(bool, CellType);
   std::vector<Cell*> get_min_area_sorted_chose_cells(std::map<Cell*, int>&);
 
   // function
   void init_cells(CellType, std::vector<Config*>);
-  std::vector<Cell*> choose_range(CellType, uint16_t, uint16_t, uint16_t,
-                                  uint16_t);
-  std::vector<Cell*> choose_ratioWH_max(CellType);
-  std::vector<Cell*> choose_death_y(CellType, Rectangle&, int, int);
-  std::vector<Cell*> choose_death_x(CellType, Rectangle&, int, int);
+  std::vector<Cell*> choose_range(bool, CellType, uint16_t, uint16_t, uint16_t, uint16_t);
+  std::vector<Cell*> choose_ratioWH_max(bool, CellType);
+  std::vector<Cell*> choose_death_y(bool, CellType, Rectangle&, int, int);
+  std::vector<Cell*> choose_death_x(bool, CellType, Rectangle&, int, int);
 
   // static
   static bool cmp_ratioWH_max(Cell* a, Cell* b);
+  void init_mems_aux();
+  void init_socs_aux();
 
   // members
   std::vector<Cell*> _mems;
   std::vector<Cell*> _socs;
+  std::vector<Cell*> _mems_aux; // to record, please not to change members
+  std::vector<Cell*> _socs_aux;
+  std::map<int, Cell*> _id_map;
 };
 
 // Cell
@@ -158,55 +169,29 @@ inline float Cell::get_flex_y() const {
             ); 
 }
 
+inline Rectangle Cell::get_box() {
+  Rectangle ret(get_c1(), get_c3());
+  return ret;
+}
+
 // CellManager
 inline void CellManager::insert_cell(CellType type, Cell* cell) {
   assert(cell != nullptr);
-  auto list = get_list(type);
+  auto list = get_list(false, type);
   if (list) {
     list->push_back(cell);
+    _id_map[cell->get_cell_id()] = cell;
   }
 }
 
-inline CellManager::CellManager(const CellManager& man) {
-  size_t num = 0;
-  _mems.resize(man.get_mems_num());
-  for (auto c : man.get_mems()) {
-    _mems[num++] = new Cell(*c);
-  }
-
-  num = 0;
-  _socs.resize(man.get_socs_num());
-  for (auto c : man.get_socs()) {
-    _socs[num++] = new Cell(*c);
-  }
-}
-
-inline CellManager::~CellManager() {
-  for (auto m : _mems) {
-    if (m) {
-      delete m;
-      m = nullptr;
-    }
-  }
-  _mems.clear();
-
-  for (auto s : _socs) {
-    if (s) {
-      delete s;
-      s = nullptr;
-    }
-  }
-  _socs.clear();
-}
-
-inline std::vector<Cell*>* CellManager::get_list(CellType type) {
+inline std::vector<Cell*>* CellManager::get_list(bool aux, CellType type) {
   std::vector<Cell*>* op_list = nullptr;
   switch (type) {
     case kCellTypeMem:
-      op_list = &_mems;
+      op_list = aux ? &_mems_aux : &_mems;
       break;
     case kCellTypeSoc:
-      op_list = &_socs;
+      op_list = aux ? &_socs_aux : &_socs;
       break;
     default:
       PANIC("Illegal cell_type = %d", type);
@@ -215,8 +200,8 @@ inline std::vector<Cell*>* CellManager::get_list(CellType type) {
   return op_list;
 }
 
-inline std::vector<Cell*> CellManager::choose_ratioWH_max(CellType obj_type) {
-  std::vector<Cell*>* op_list = get_list(obj_type);
+inline std::vector<Cell*> CellManager::choose_ratioWH_max(bool aux, CellType tar_type) {
+  std::vector<Cell*>* op_list = get_list(aux, tar_type);
   assert(op_list != nullptr);
 
   std::vector<Cell*> result = *op_list;
@@ -233,6 +218,33 @@ inline bool CellManager::cmp_ratioWH_max(Cell* a, Cell* b) {
   } else {
     return false;
   }
+}
+
+inline Cell* CellManager::get_cell(int cell_id) {
+  return _id_map.count(cell_id) ? _id_map[cell_id] : nullptr;
+}
+
+inline void CellManager::init_mems_aux() {
+  for (auto m : _mems) {
+    _mems_aux.push_back(m);
+  }
+}
+
+inline void CellManager::init_socs_aux() {
+  for (auto s : _socs) {
+    _socs_aux.push_back(s);
+  }
+}
+
+inline int CellManager::cal_cell_area(const std::vector<int>& cell_ids) {
+  int area = 0;
+  for (auto id : cell_ids) {
+    ASSERT(_id_map.count(id), "Can not find cell whose id = %d", id);
+
+    auto cell = _id_map[id];
+    area += cell->get_area();
+  }
+  return area;
 }
 
 }  // namespace EDA_CHALLENGE_Q4

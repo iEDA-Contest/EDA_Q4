@@ -6,8 +6,9 @@
 namespace EDA_CHALLENGE_Q4 {
 
 size_t VCG::_gds_file_num = 0;
+static size_t max_picks_num = 5;
 
-VCG::VCG(Token_List& tokens) : _cell_man(nullptr), _constraint(nullptr),
+VCG::VCG(Token_List& tokens) : _cell_man(nullptr), _cst(nullptr),
 _last_merge_id(0) {
   _adj_list.push_back(new VCGNode(kVCG_END));
   VCGNode* start = new VCGNode(kVCG_START);
@@ -85,6 +86,7 @@ _last_merge_id(0) {
 
   // init
   init_tos();
+  fill_id_grid();
   init_column_row_index();
   
   // debug
@@ -98,10 +100,7 @@ VCG::~VCG() {
   _cell_man = nullptr;
 
   for (auto p : _adj_list) {
-    if (p) {
-      delete p;
-    }
-    p = nullptr;
+    delete p;
   }
   _adj_list.clear();
 
@@ -110,7 +109,7 @@ VCG::~VCG() {
   }
   _id_grid.clear();
 
-  _constraint = nullptr;  // must not release here!
+  _cst = nullptr;  // must not release here!
   
   _place_stack.clear();
 
@@ -170,26 +169,28 @@ void VCG::show_froms_tos() {
   for (auto p : _adj_list) {
     p->show_froms();
     p->show_tos();
-    printf("\n");
+    g_log << "\n";
   }
-  printf("------\n");
+  g_log << "------\n";
+  g_log.flush();
 }
 
 void VCG::show_id_grid() {
   size_t max_row = get_max_row(_id_grid);
 
   for (size_t row = 0; row < max_row; ++row) {
-    printf("row[%lu]:", row);
+    g_log << "row[" << row <<"]:";
     for (size_t column = 0; column < _id_grid.size(); ++column) {
       if (row < _id_grid[column].size()) {
-        printf("%2hhu, ", _id_grid[column][row]);
+        g_log << std::to_string(_id_grid[column][row]) << ", ";
       } else {
-        printf("  , ");
+        PANIC("Does not fill _id_grid");
       }
     }
-    printf("\b\b  \n");
+    g_log << "\n";
   }
-  printf("------\n");
+  g_log << "------\n";
+  g_log.flush();
 }
 
 /**
@@ -328,8 +329,25 @@ void VCG::find_best_place() {
   auto helpers = make_pick_helpers(modules);
   make_helper_map(helpers);
   place();
-  // legalize
+  // record
+  std::map<int, bool> first_try;
+  for (size_t node_id = 1; node_id <= _place_stack.size(); ++node_id) {
+    auto cell = get_cell(node_id);
+    assert(cell);
+    first_try[cell->get_cell_id()] = cell->get_rotation();
+  }
+  // possibility
+  find_possible_combinations();
+  // recover
+  for (auto pair : first_try) {
+    auto cell = _cell_man->get_cell(pair.first);
+    assert(cell);
+    if (cell->get_rotation() != pair.second) {
+      cell->rotate();
+    }
+  }
   place_cells_again();
+  try_legalize();
 }
 
 // get the smallest indivisible modules, and their order rely on slicing times
@@ -420,11 +438,10 @@ std::vector<ModuleHelper*> VCG::make_pick_helpers(std::vector<GridType>& modules
       freq_sorted.insert(std::make_pair(fre.second, fre.first));
     }
 
-    // make pick recommendation
+    // make helper
     ModuleHelper* helper = new ModuleHelper();
     helper->_biggest = freq_sorted.rbegin()->second;
     helper->_module = m;
-    helper->_cell_num = freq_sorted.size();
     if (freq_sorted.size() == 1) {
       helper->_type = kMoSingle;
     } else if (m.size() == 1) {
@@ -462,7 +479,7 @@ CellPriority VCG::get_priority(VCGNodeType type) {
  * @param id2 
  * @return Point 
  */
-Point VCG::get_constraint_y(uint8_t id1, uint8_t id2) {
+Point VCG::get_cst_y(uint8_t id1, uint8_t id2) {
   CellType type1 = get_cell_type(id1);
   CellType type2 = get_cell_type(id2);
   assert(type1 != kCellTypeNull && type2 != kCellTypeNull);
@@ -471,17 +488,17 @@ Point VCG::get_constraint_y(uint8_t id1, uint8_t id2) {
   static constexpr uint8_t shl = 2;
   switch (type1 << shl | type2) {
     case kCellTypeMem << shl | kCellTypeMem:
-      ret._x = _constraint->get_constraint(kYMM_MIN);
-      ret._y = _constraint->get_constraint(kYMM_MAX);
+      ret._x = _cst->get_cst(kYMM_MIN);
+      ret._y = _cst->get_cst(kYMM_MAX);
       break;
     case kCellTypeMem << shl | kCellTypeSoc:
     case kCellTypeSoc << shl | kCellTypeMem:
-      ret._x = _constraint->get_constraint(kYMS_MIN);
-      ret._y = _constraint->get_constraint(kYMS_MAX);
+      ret._x = _cst->get_cst(kYMS_MIN);
+      ret._y = _cst->get_cst(kYMS_MAX);
       break;
     case kCellTypeSoc << shl | kCellTypeSoc:
-      ret._x = _constraint->get_constraint(kYSS_MIN);
-      ret._y = _constraint->get_constraint(kYSS_MAX);
+      ret._x = _cst->get_cst(kYSS_MIN);
+      ret._y = _cst->get_cst(kYSS_MAX);
       break;
 
     default:
@@ -499,7 +516,7 @@ Point VCG::get_constraint_y(uint8_t id1, uint8_t id2) {
  * @param id 
  * @return Point 
  */
-Point VCG::get_constraint_y(uint8_t id) {
+Point VCG::get_cst_y(uint8_t id) {
   CellType ctype = get_cell_type(id);
   assert(ctype != kCellTypeNull);
 
@@ -507,12 +524,12 @@ Point VCG::get_constraint_y(uint8_t id) {
   switch (ctype)
   {
     case kCellTypeMem: 
-      ret._x = _constraint->get_constraint(kYMI_MIN);
-      ret._y = _constraint->get_constraint(kYMI_MAX);
+      ret._x = _cst->get_cst(kYMI_MIN);
+      ret._y = _cst->get_cst(kYMI_MAX);
       break;
     case kCellTypeSoc:
-      ret._x = _constraint->get_constraint(kYSI_MIN);
-      ret._y = _constraint->get_constraint(kYSI_MAX);
+      ret._x = _cst->get_cst(kYSI_MIN);
+      ret._y = _cst->get_cst(kYSI_MAX);
       break;
     
     default: assert(0);
@@ -530,7 +547,7 @@ Point VCG::get_constraint_y(uint8_t id) {
  * @param id2 
  * @return Point 
  */
-Point VCG::get_constraint_x(uint8_t id1, uint8_t id2) {
+Point VCG::get_cst_x(uint8_t id1, uint8_t id2) {
   CellType type1 = get_cell_type(id1);
   CellType type2 = get_cell_type(id2);
   assert(type1 != kCellTypeNull && type2 != kCellTypeNull);
@@ -539,17 +556,17 @@ Point VCG::get_constraint_x(uint8_t id1, uint8_t id2) {
   static constexpr uint8_t shl = 2;
   switch (type1 << shl | type2) {
     case kCellTypeMem << shl | kCellTypeMem:
-      ret._x = _constraint->get_constraint(kXMM_MIN);
-      ret._y = _constraint->get_constraint(kXMM_MAX);
+      ret._x = _cst->get_cst(kXMM_MIN);
+      ret._y = _cst->get_cst(kXMM_MAX);
       break;
     case kCellTypeMem << shl | kCellTypeSoc:
     case kCellTypeSoc << shl | kCellTypeMem:
-      ret._x = _constraint->get_constraint(kXMS_MIN);
-      ret._y = _constraint->get_constraint(kXMS_MAX);
+      ret._x = _cst->get_cst(kXMS_MIN);
+      ret._y = _cst->get_cst(kXMS_MAX);
       break;
     case kCellTypeSoc << shl | kCellTypeSoc:
-      ret._x = _constraint->get_constraint(kXSS_MIN);
-      ret._y = _constraint->get_constraint(kXSS_MAX);
+      ret._x = _cst->get_cst(kXSS_MIN);
+      ret._y = _cst->get_cst(kXSS_MAX);
       break;
 
     default:
@@ -567,7 +584,7 @@ Point VCG::get_constraint_x(uint8_t id1, uint8_t id2) {
  * @param id node id
  * @return Point (min, max) means constraint value lies in [min, max]
  */
-Point VCG::get_constraint_x(uint8_t id) {
+Point VCG::get_cst_x(uint8_t id) {
   CellType ctype = get_cell_type(id);
   assert(ctype != kCellTypeNull);
 
@@ -575,12 +592,12 @@ Point VCG::get_constraint_x(uint8_t id) {
   switch (ctype)
   {
     case kCellTypeMem: 
-      ret._x = _constraint->get_constraint(kXMI_MIN);
-      ret._y = _constraint->get_constraint(kXMI_MAX);
+      ret._x = _cst->get_cst(kXMI_MIN);
+      ret._y = _cst->get_cst(kXMI_MAX);
       break;
     case kCellTypeSoc:
-      ret._x = _constraint->get_constraint(kXSI_MIN);
-      ret._y = _constraint->get_constraint(kXSI_MAX);
+      ret._x = _cst->get_cst(kXSI_MIN);
+      ret._y = _cst->get_cst(kXSI_MAX);
       break;
     
     default: assert(0);
@@ -601,7 +618,7 @@ Cell* VCG::get_cell_fits_min_ratioWH(uint8_t id) {
   VCGNode* cur = get_node(id);
   assert(cur != nullptr);
 
-  auto recommends = _cell_man->choose_cells(get_priority(get_node_type(id)));
+  auto recommends = _cell_man->choose_cells(false, get_priority(get_node_type(id)));
 
   Cell* best = nullptr;
   for (auto cell : recommends) {
@@ -625,9 +642,7 @@ void VCG::gen_GDS() {
 #ifndef GDS
   return;
 #endif
-  std::string fname = "/home/liangyuyao/EDA_CHALLENGE_Q4/output/myresult" +
-                      std::to_string(_gds_file_num) + ".gds";
-  ++_gds_file_num;
+  std::string fname = "../output/myresult" + std::to_string(_gds_file_num) + ".gds";
   std::fstream gds;
   gds.open(fname, std::ios::out);
   assert(gds.is_open());
@@ -667,31 +682,20 @@ void VCG::gen_GDS() {
     gds << "ENDSTR\n\n";
   }
 
-  // interposer_box_c1
+  auto c3_vec = cal_c3_of_interposer();
+  auto c3_x = std::min(c3_vec[0], c3_vec[1]);
+  auto c3_y = std::min(c3_vec[2], c3_vec[3]);
+  // interposer
   gds << "BGNSTR\n";
-  gds << "STRNAME box_c1\n";
+  gds << "STRNAME interposer\n";
   gds << "BOUNDARY\n";
-  gds << "LAYER " << std::to_string(get_vertex_num() - 1) << "\n";
+  gds << "LAYER 0\n";
   gds << "DATATYPE 0\n";
   gds << "XY\n";
   gds << "0 : 0\n";
-  gds << "0 : 2\n";
-  gds << "2 : 2\n";
-  gds << "2 : 0\n";
-  gds << "0 : 0\n";
-  gds << "ENDEL\n";
-  gds << "ENDSTR\n\n";
-  // interposer_box_c3
-  gds << "BGNSTR\n";
-  gds << "STRNAME box_c3\n";
-  gds << "BOUNDARY\n";
-  gds << "LAYER " << std::to_string(get_vertex_num()) << "\n";
-  gds << "DATATYPE 0\n";
-  gds << "XY\n";
-  gds << "0 : 0\n";
-  gds << "0 : 2\n";
-  gds << "2 : 2\n";
-  gds << "2 : 0\n";
+  gds << "0 : " << c3_y << "\n";
+  gds << c3_x << " : " << c3_y << "\n";
+  gds << c3_x << " : 0\n";
   gds << "0 : 0\n";
   gds << "ENDEL\n";
   gds << "ENDSTR\n\n";
@@ -717,16 +721,10 @@ void VCG::gen_GDS() {
     gds << "ENDEL\n";
   }
 
-  // interposer_box_c1
+  // interposer
   gds << "SREF\n";
-  gds << "SNAME box_c1\n";
+  gds << "SNAME interposer\n";
   gds << "XY  0 : 0\n";  // c1 point
-  gds << "ENDEL\n";
-  // interposer_box_c3
-  auto c3 = cal_c3_of_interposer();
-  gds << "SREF\n";
-  gds << "SNAME box_c3\n";
-  gds << "XY  " << c3._x << " : " << c3._y << "\n";  // c3 point
   gds << "ENDEL\n";
 
   // gds end
@@ -771,27 +769,6 @@ std::vector<Cell*> VCG::get_left_cells(uint8_t id) {
   }
 
   return ret;
-}
-
-bool VCG::is_overlap_x(Cell* c1, Cell* c2) {
-  if (c1 == nullptr || c2 == nullptr) return true;
-
-  auto c1_min_x = c1->get_x();
-  auto c1_max_x = c1_min_x + c1->get_width();
-  auto c2_min_x = c2->get_x();
-  auto c2_max_x = c2_min_x + c2->get_width();
-
-  return !((c1_min_x >= c2_max_x) || c1_max_x <= c2_min_x);
-}
-
-bool VCG::is_overlap_y(Cell* c1, Cell* c2) {
-  if (c1 == nullptr || c2 == nullptr) return true;
-
-  auto c1_min_y = c1->get_y();
-  auto c1_max_y = c1_min_y + c1->get_height();
-  auto c2_min_y = c2->get_y();
-  auto c2_max_y = c2_min_y + c2->get_height();
-  return !(c1_min_y >= c2_max_y || c1_max_y <= c2_min_y);
 }
 
 void VCG::place() {
@@ -873,7 +850,6 @@ void VCG::make_helper_map(std::vector<ModuleHelper*>& helpers) {
   GridType g0(1);
   g0[0].push_back(0);
   _helper_map[0] = new ModuleHelper();
-  _helper_map[0]->_cell_num = 1;
   _helper_map[0]->_biggest = 0;
   _helper_map[0]->_type = kMoSingle;
   _helper_map[0]->_module = g0;
@@ -882,7 +858,6 @@ void VCG::make_helper_map(std::vector<ModuleHelper*>& helpers) {
   auto start = get_vertex_num() - 1;
   g1[0].push_back(start);
   _helper_map[start] = new ModuleHelper();
-  _helper_map[start]->_cell_num = 1;
   _helper_map[start]->_biggest = start;
   _helper_map[start]->_type = kMoSingle;
   _helper_map[start]->_module = g1;
@@ -920,8 +895,9 @@ void VCG::place_module(ModuleHelper* target, std::map<uint8_t, bool>& visited) {
       place_whe(target, visited);
       break;
     case kMoSingle: 
-      visit_single(get_node(target->_biggest) );
+      visit_single(get_node(target->_biggest));
       visited[target->_biggest] = true;
+      target->_order.push_back(target->_biggest);
       break;
 
     default: assert(0);
@@ -979,6 +955,7 @@ void VCG::place_col(ModuleHelper* target, std::map<uint8_t, bool>& visited) {
   do_pick_cell(first_node->get_id(), first_cell);
   visited[first_node->get_id()] = true;
   _place_stack.push_back(first_node->get_id());
+  target->_order.push_back(first_node->get_id());
 
   Rectangle box(first_cell->get_c1(), first_cell->get_c3());
   
@@ -991,14 +968,15 @@ void VCG::place_col(ModuleHelper* target, std::map<uint8_t, bool>& visited) {
     queue.pop();
 
     auto cell_type = get_cell_type(cur_node->get_id());
-    auto constraint = get_constraint_y(last_node->get_id(), cur_node->get_id());
-    auto bests = _cell_man->choose_cells(kDeathCol, cell_type, box,
+    auto constraint = get_cst_y(last_node->get_id(), cur_node->get_id());
+    auto bests = _cell_man->choose_cells(false, kDeathCol, cell_type, box,
                                         constraint._x, constraint._y);
     ASSERT(bests.size(), "No cells to pick");
     do_pick_cell(cur_node->get_id(), bests[0]);
 
     visited[cur_node->get_id()] = true;
     _place_stack.push_back(cur_node->get_id());
+    target->_order.push_back(cur_node->get_id());
     
     box._c3._x = std::max(box.get_width(), (int)bests[0]->get_width());
     box._c3._y = box.get_height() + constraint._x + bests[0]->get_height();
@@ -1034,7 +1012,7 @@ Point VCG::cal_y_range(VCGNode* cur_node, float flex) {
   
   if (cur_node->is_from_start()) {
     // interposer
-    auto constraint = get_constraint_y(cur_node->get_id());
+    auto constraint = get_cst_y(cur_node->get_id());
     y_range = {constraint._x, constraint._y};
   } else {
     int min_y = 0;
@@ -1043,7 +1021,7 @@ Point VCG::cal_y_range(VCGNode* cur_node, float flex) {
     for (auto from : cur_node->get_froms()) {
       auto fcell = from->get_cell();
       assert(fcell);
-      auto constraint = get_constraint_y(cur_node->get_id(), from->get_id());
+      auto constraint = get_cst_y(cur_node->get_id(), from->get_id());
       min_y = std::max(min_y, 
                        fcell->get_c3()._y + constraint._x);
       max_y = max_y == 0 ?
@@ -1066,7 +1044,7 @@ Point VCG::cal_x_range(VCGNode* cur_node, float flex) {
 
   if (cur_node->is_first_column()){
     // interposer
-    auto constraint = get_constraint_x(cur_node->get_id());
+    auto constraint = get_cst_x(cur_node->get_id());
     x_range = {constraint._x, constraint._y};
   } else {
 
@@ -1105,9 +1083,9 @@ Point VCG::cal_x_range(VCGNode* cur_node, float flex) {
       auto left_helper = _helper_map[id];
       auto merge = left_helper->get_merge();
       if (merge) {
-        min_x = std::max(min_x, merge->_box->_c3._x);
+        min_x = std::max(min_x, merge->_box->_c3._x + 1);
       } else {
-        min_x = std::max(min_x, left_helper->_box->_c3._x);
+        min_x = std::max(min_x, left_helper->_box->_c3._x + 1);
       }
     }
     
@@ -1115,13 +1093,20 @@ Point VCG::cal_x_range(VCGNode* cur_node, float flex) {
     auto cur_cell = cur_node->get_cell();
     assert(cur_cell);
     for (auto id : _place_stack) {
+      auto node = get_node(id);
       auto cell = get_cell(id);
-      assert(cell);
-      if (!is_overlap_y(cell, cur_cell)) continue;
+      assert(node && cell);
+      if (!is_overlap_y(cell, cur_cell, false) ||
+          node->get_max_column_index() >= cur_node->get_max_column_index() )
+          continue;
 
-      auto constraint = get_constraint_x(cell->get_node_id(), cur_node->get_id());
-      min_x = std::max(min_x, cell->get_c3()._x + constraint._x);
-      max_x = std::min(max_x, cell->get_c3()._x + constraint._y);
+      auto constraint = get_cst_x(cell->get_node_id(), cur_node->get_id());
+      min_x = std::max(min_x, cell->get_c3()._x);
+      if (node->get_max_column_index() == cur_node->get_column_index() - 1) {
+        min_x = std::max(min_x, cell->get_c3()._x + constraint._x);
+        max_x = max_x == 0 ? cell->get_c3()._x + constraint._y :
+                             std::min(max_x, cell->get_c3()._x + constraint._y);
+      }
     }
 
     x_range = {min_x, max_x};
@@ -1164,6 +1149,10 @@ void VCG::set_module_box(uint8_t id) {
     box->_c3._y = std::max(box->_c3._y, cell->get_c3()._y);
   }
 
+  // death
+  auto cell_area = _cell_man->cal_cell_area(get_cell_ids(helper));
+  helper->set_death(1 - 1.0 * cell_area / box->get_area());
+
   // debug
   g_log << "helper[" << std::to_string(id) << "].box = {(" << 
   box->_c1._x << "," << box->_c1._y << "), (" <<
@@ -1179,7 +1168,7 @@ std::vector<Cell*> VCG::get_left_overlap_y_cells(VCGNode* cur_node) {
   // remain cells that constitute constraint
   placed_cells.erase(std::remove_if(
     placed_cells.begin(), placed_cells.end(), [this, cur_cell](auto cell) {
-      return !this->is_overlap_y(cell, cur_cell);
+      return !is_overlap_y(cell, cur_cell, false);
     }
   ), placed_cells.end());
   return placed_cells;
@@ -1208,6 +1197,7 @@ void VCG::place_row(ModuleHelper* target, std::map<uint8_t, bool>& visited) {
   do_pick_cell(first_node->get_id(), first_cell);
   visited[first_node->get_id()] = true;
   _place_stack.push_back(first_node->get_id());
+  target->_order.push_back(first_node->get_id());
 
   Rectangle box(first_cell->get_c1(), first_cell->get_c3());
   
@@ -1220,14 +1210,15 @@ void VCG::place_row(ModuleHelper* target, std::map<uint8_t, bool>& visited) {
     queue.pop();
 
     auto cell_type = get_cell_type(cur_node->get_id());
-    auto constraint = get_constraint_x(last_node->get_id(), cur_node->get_id());
-    auto bests = _cell_man->choose_cells(kDeathRow, cell_type, box, 
+    auto constraint = get_cst_x(last_node->get_id(), cur_node->get_id());
+    auto bests = _cell_man->choose_cells(false, kDeathRow, cell_type, box, 
                                               constraint._x, constraint._y);
     ASSERT(bests.size(), "No cells to pick");
     do_pick_cell(cur_node->get_id(), bests[0]);
 
     visited[cur_node->get_id()] = true;
     _place_stack.push_back(cur_node->get_id());
+    target->_order.push_back(cur_node->get_id());
 
     box._c3._x = box.get_width() + constraint._x + bests[0]->get_width();
     box._c3._y = std::max(box.get_height(), (int)bests[0]->get_height());
@@ -1272,6 +1263,7 @@ void VCG::place_whe(ModuleHelper* target, std::map<uint8_t, bool>& visited) {
     
     visited[cur_node->get_id()] = true;
     _place_stack.push_back(cur_node->get_id());
+    target->_order.push_back(cur_node->get_id());
 
     try_place(cur_node);
   }
@@ -1317,7 +1309,6 @@ std::queue<uint8_t> VCG::make_whe_visit_queue(ModuleHelper* helper) {
     }
   }
 
-  assert(ret.size() == helper->_cell_num);
   return ret;
 }
 
@@ -1345,36 +1336,20 @@ std::map<uint8_t, std::set<uint8_t>> VCG::make_in_edge_list(GridType& module) {
   return ret;
 }
 
-void VCG::try_place(VCGNode* target) {
+void VCG::try_place(VCGNode* target, float flex_x, float flex_y) {
   assert(target);
   auto tar_cell = target->get_cell();
   assert(tar_cell);
 
-  float flex_x = 1;
-  float flex_y = 1;
-
   auto y_range = cal_y_range(target, flex_y);
-  if (y_range._x < y_range._y) {
-    tar_cell->set_y_range(y_range);
-    tar_cell->set_y(y_range._x + (1 - flex_y) * (y_range._y - y_range._x));
-  } else {
-    // debug
-    tar_cell->set_y(y_range._x + (1 - flex_y) * (y_range._y - y_range._x));
-    // gen_GDS();
-    // TODO();
-  }
+  tar_cell->set_y_range(y_range);
+  tar_cell->set_y(y_range._x + (1 - flex_y) * (y_range._y - y_range._x));
 
   auto x_range = cal_x_range(target, flex_x);
-  if (x_range._x < x_range._y) {
-    tar_cell->set_x_range(x_range);
-    tar_cell->set_x(x_range._x + (1 - flex_x)* (x_range._y - x_range._x));
-  } else {
-    // debug
-    tar_cell->set_x(x_range._x + (1 - flex_x)* (x_range._y - x_range._x));
-    // gen_GDS();
-    // TODO();
-  }
+  tar_cell->set_x_range(x_range);
+  tar_cell->set_x(x_range._x + (1 - flex_x)* (x_range._y - x_range._x));
 
+  // debug
   g_log << tar_cell->get_refer() << 
   std::to_string(tar_cell->get_node_id()) << "_" << tar_cell->get_cell_id() 
   << " (" << tar_cell->get_x() << "," << tar_cell->get_y() << ")\n";
@@ -1383,7 +1358,7 @@ void VCG::try_place(VCGNode* target) {
 void VCG::merge_box(ModuleHelper* helper) {
   assert(helper);
 
-  if (_place_stack.size() <= helper->_cell_num) return;
+  if (_place_stack.size() <= helper->_order.size()) return;
 
   auto last_merge_id = _last_merge_id == 0 ? _place_stack[0] : _last_merge_id;
 
@@ -1406,7 +1381,7 @@ void VCG::merge_box(ModuleHelper* helper) {
       merge_with_right(helper);
     }
 
-    index += helper->_cell_num;
+    index += helper->_order.size();
   }
 
 }
@@ -1682,7 +1657,7 @@ void VCG::place_cells_again() {
     auto helper = _helper_map[place_stack[index]];
     helper->set_box_init();
 
-    for (size_t order = 0; order < helper->_cell_num; ++order) {
+    for (size_t order = 0; order < helper->_order.size(); ++order) {
       auto node = get_node(place_stack[index]);
       try_place(node);
       _place_stack.push_back(node->get_id());
@@ -1696,14 +1671,14 @@ void VCG::place_cells_again() {
 
 }
 
-Point VCG::cal_c3_of_interposer() {
+std::vector<int> VCG::cal_c3_of_interposer() {
   int min_y = 0;
   int max_y = 0;
   // top
   for (auto column : _id_grid) {
     auto cell = get_cell(column[0]);
     assert(cell);
-    auto constraint = get_constraint_y(cell->get_node_id());
+    auto constraint = get_cst_y(cell->get_node_id());
     min_y = std::max(min_y, cell->get_c3()._y + constraint._x);
     max_y = max_y == 0 ?
             cell->get_c3()._y + constraint._y :
@@ -1715,10 +1690,10 @@ Point VCG::cal_c3_of_interposer() {
   int max_x = 0;
   if (_id_grid.size()) {
     auto last_col = _id_grid[_id_grid.size() - 1];
-    for (auto row = 0; (size_t)row < last_col.size(); ++row) {
+    for (size_t row = 0; row < last_col.size(); ++row) {
       auto cell = get_cell(last_col[row]);
       assert(cell);
-      auto constraint = get_constraint_x(cell->get_node_id());
+      auto constraint = get_cst_x(cell->get_node_id());
       min_x = std::max(min_x, cell->get_c3()._x + constraint._x);
       max_x = max_x == 0 ?
               cell->get_c3()._x + constraint._y :
@@ -1728,10 +1703,479 @@ Point VCG::cal_c3_of_interposer() {
 
   // debug
   g_log << "\n";
-  g_log << "##Interposer_box.x " << min_x << " ~ " << max_x << "\n";
-  g_log << "##Interposer_box.y " << min_y << " ~ " << max_y << "\n";
+  g_log << "##Interposer_x " << min_x << " ~ " << max_x << "\n";
+  g_log << "##Interposer_y " << min_y << " ~ " << max_y << "\n";
+  g_log.flush();
 
-  return {std::min(min_x, max_x), std::min(min_y, max_y)};
+  return {min_x, max_x, min_y, max_y};
+}
+
+ModuleHelper::~ModuleHelper()  {
+  for (auto v : _module) {
+    v.clear();
+  }
+  _module.clear();
+
+  delete _box;
+  _box = nullptr;
+  _merge = nullptr; // Must Not release here
+
+  clear_picks();
+}
+
+void VCG::find_possible_combinations() {
+  for (size_t order = 0; order < _place_stack.size();) {
+    auto id = _place_stack[order];
+    assert(_helper_map.count(id));
+    auto helper = _helper_map[id];
+
+    build_picks(helper);
+
+    order += helper->_order.size();
+  }
+}
+
+void VCG::build_picks(ModuleHelper* helper) {
+  assert(helper);
+
+  if (helper->_type == kMoWheel) return;
+
+  // first
+  build_first(helper);
+
+  // left
+  for (size_t order = 1; order < helper->_order.size(); ++order) {
+    switch (helper->_type)
+    {
+      case kMoColumn:
+        build_picks_col(helper);
+        break;
+      case kMoRow:
+        build_picks_row(helper);
+        break;
+      case kMoWheel:
+        break;
+      
+      case kMoSingle: PANIC("Module contains more than one cell"); 
+      default: assert(0);
+    }
+  }
+  
+}
+
+void VCG::build_first(ModuleHelper* helper) {
+  assert(helper && helper->_order.size());
+
+  std::set<int> refer_set;
+  for (auto cell :
+        _cell_man->choose_cells(true, 
+          get_priority(get_node_type(helper->_order[0])))
+      ) {
+    
+    if (refer_set.count(cell->get_refer_id())) continue;
+    
+    auto term = new PickTerm(cell);
+    helper->_picks.push(term);
+
+    if (!cell->is_square()) {
+      cell->rotate();
+      auto term_rotate = new PickTerm(cell);
+      helper->_picks.push(term_rotate);
+    }
+
+    refer_set.insert(cell->get_refer_id());
+  }
+}
+
+void VCG::build_picks_col(ModuleHelper* helper) {
+  assert(helper && helper->_type == kMoColumn);
+
+  Prio_Pick round_terms;
+  while (helper->_picks.size()) {
+    auto term = helper->_picks.top();
+    helper->_picks.pop();
+
+    auto has_picked_num = term->get_picks_num();
+    assert(has_picked_num > 0 && helper->_order.size() > has_picked_num);
+    auto last_node_id = helper->_order[has_picked_num - 1];
+    auto tar_node_id = helper->_order[has_picked_num];
+    auto tar_cell_type = get_cell_type(tar_node_id);
+    auto constraint = get_cst_y(last_node_id, tar_node_id);
+    auto bests = _cell_man->choose_cells(true, kDeathCol, tar_cell_type, 
+                                        term->get_box(), constraint._x, constraint._y);
+    ASSERT(bests.size(), "No Cells to pick");
+  
+    std::set<int> refer_set;
+    for (auto cell : bests) {
+      if (term->is_picked(cell) ||
+          refer_set.count(cell->get_refer_id() << (cell->get_rotation() ? 0 : 1))
+         ) continue;
+        
+      auto new_term = new PickTerm(*term);
+      new_term->insert(cell);
+      refer_set.insert(cell->get_refer_id() << (cell->get_rotation() ? 0 : 1));
+
+      Rectangle box(*term->get_box());
+      box._c3._x = std::max(box.get_width(), (int)cell->get_width());
+      box._c3._y = box.get_height() + constraint._x + cell->get_height();
+      new_term->set_box(box);
+      new_term->set_death(1 -
+        1.0 *  _cell_man->cal_cell_area(new_term->get_picks()) / box.get_area());
+      
+      if (round_terms.size() < max_picks_num) {
+        round_terms.push(new_term);
+      } else {
+
+        auto worst_term = round_terms.top();
+        auto worst_death = worst_term->get_death();
+        auto new_death = new_term->get_death();
+        if ( (worst_death > new_death) ||
+             (worst_death == new_death &&
+                worst_term->get_box()->get_area() > new_term->get_box()->get_area()
+             )) {
+          // new_term has smaller death or area
+          round_terms.pop();
+          round_terms.push(new_term);
+          delete worst_term;
+        } else {
+          // new_term has bigger death or area
+          delete new_term;
+        }
+
+      }
+
+    } // end for: bests
+
+    delete term;
+  } // end while: helper->_picks
+
+  helper->_picks.swap(round_terms);
+}
+
+void VCG::build_picks_row(ModuleHelper* helper) {
+  assert(helper && helper->_type == kMoRow);
+
+  Prio_Pick round_terms;
+  while (helper->_picks.size()) {
+    auto term = helper->_picks.top();
+    helper->_picks.pop();
+
+    auto has_picked_num = term->get_picks_num();
+    assert(has_picked_num > 0 && helper->_order.size() > has_picked_num);
+    auto last_node_id = helper->_order[has_picked_num - 1];
+    auto tar_node_id = helper->_order[has_picked_num];
+    auto tar_cell_type = get_cell_type(tar_node_id);
+    auto constraint = get_cst_x(last_node_id, tar_node_id);
+    auto bests = _cell_man->choose_cells(true, kDeathRow, tar_cell_type, 
+                                        term->get_box(), constraint._x, constraint._y);
+    ASSERT(bests.size(), "No Cells to pick");
+
+    std::set<int> refer_set;
+    for (auto cell : bests) {
+      if (term->is_picked(cell) ||
+          refer_set.count(cell->get_refer_id() << (cell->get_rotation() ? 0 : 1))
+         ) continue;
+        
+      auto new_term = new PickTerm(*term);
+      new_term->insert(cell);
+      refer_set.insert(cell->get_refer_id() << (cell->get_rotation() ? 0 : 1));
+
+      Rectangle box(*term->get_box());
+      box._c3._x = box.get_width() + constraint._x + cell->get_width();
+      box._c3._y = std::max(box.get_height(), (int)cell->get_height());
+      new_term->set_box(box);
+      new_term->set_death(1 -
+        1.0 *  _cell_man->cal_cell_area(new_term->get_picks()) / box.get_area());
+      
+      if (round_terms.size() < max_picks_num) {
+        round_terms.push(new_term);
+      } else {
+        auto worst_term = round_terms.top();
+        auto worst_death = worst_term->get_death();
+        auto new_death = new_term->get_death();
+
+        if ( (worst_death > new_death) ||
+             (worst_death == new_death &&
+                worst_term->get_box()->get_area() > new_term->get_box()->get_area()
+             )) {
+          // new_term has smaller death or area
+          round_terms.pop();
+          round_terms.push(new_term);
+          delete worst_term;
+        } else {
+          // new_term has bigger death or area
+          delete new_term;
+        }
+
+      } // end if else: max_picks_num
+
+    } // end for: bests
+
+    delete term;
+  } // end while: helper->_picks
+
+  helper->_picks.swap(round_terms);
+}
+
+void VCG::try_legalize() {
+  float cost = 1;
+  while (cost >= 1) {
+    gen_GDS(); 
+    // auto bad_flex_cells = check_range_invalid();
+    auto box_range = cal_c3_of_interposer();
+    auto unpass_id = fail_cst_id();
+    if (unpass_id != 0) {
+      TODO();
+    } else if (box_range[0] > box_range[1]) {
+      fix_x_range(box_range[1], box_range[0] - box_range[1]);
+    } else if (box_range[2] > box_range[3]) {
+      fix_y_range(box_range[3], box_range[2] - box_range[3]);
+    } else {
+      cost = 0;
+    }
+  }
+}
+
+void VCG::fill_id_grid() {
+  auto max_row = get_max_row(_id_grid);
+  for(auto& column : _id_grid) {
+    for (size_t row = column.size(); row < max_row; ++row) {
+      column.push_back(column[row - 1]);
+    }
+  }
+}
+
+std::vector<int> VCG::check_range_invalid() {
+  std::vector<int> ret;
+
+  for (size_t order = 0; order < _place_stack.size(); ++order) {
+    auto node_id = _place_stack[order];
+    auto cell = get_cell(node_id);
+    assert(cell);
+
+    auto x_range = cell->get_x_range();
+    auto y_range = cell->get_y_range();
+    // debug
+    g_log << cell->get_refer() << std::to_string(cell->get_node_id()) << ":\n";
+    g_log << "x_range:" << x_range._x << "~" << x_range._y << "\n";
+    g_log << "y_range:" << y_range._x << "~" << y_range._y << "\n";
+    if (x_range._x <= x_range._y && 
+        y_range._x <= y_range._y) {
+      g_log << "Valid\n";
+    } else {
+      g_log << "!!!!! Invalid !!!!!\n";
+      ret.push_back(cell->get_cell_id());
+    }
+    g_log.flush();
+  }
+
+  return ret;
+}
+
+void VCG::fix_x_range(int min_x, int to_fix) {
+  std::set<uint8_t> rights;
+  for (auto right_id : _id_grid[_id_grid.size() - 1]) {
+    rights.insert(right_id);
+  }
+
+  auto last_col = _id_grid[_id_grid.size() - 1];
+  for (size_t row = 0; row < last_col.size(); ++row) {
+    auto cell = get_cell(last_col[row]);
+    assert(cell);
+  
+    auto constraint = get_cst_x(cell->get_node_id());
+    if (cell->get_c3()._x + constraint._x < min_x) {
+      auto x_range = cell->get_x_range();
+      if (x_range._y - x_range._x >= to_fix) {
+        cell->set_x(cell->get_x() + to_fix);
+        // float flex_x = 1 - (cell->get_x() - x_range._x) / (x_range._y - x_range._x);
+        break;
+      } else {
+        TODO();
+      }
+    }
+  }
+  
+}
+
+void VCG::gen_result() {
+  std::fstream result("../output/result.txt", std::ios::app | std::ios::out);
+  assert(result.is_open());
+
+  std::string pattern = _cst->get_pattern();
+  std::string::size_type pos = 0;
+  const std::string sub_str = "&#60;";
+  while ((pos = pattern.find(sub_str)) != std::string::npos) {
+    pattern.replace(pos, sub_str.length(), "<");
+  }
+
+  if (pattern[pattern.size() - 1] == ' ') {
+    pattern.replace(pattern.size() - 1, 1, "\0");
+  }
+  result << "PATTERN \"" << pattern << "\" ";
+
+  auto box_c3 = cal_c3_of_interposer();
+  if (box_c3[0] > box_c3[1]
+   || box_c3[2] > box_c3[3]) {
+     result << "NA\n";
+  } else {
+    result << box_c3[0] << " * " << box_c3[2] << "\n";
+    for (auto node : _adj_list) {
+      auto type = node->get_type();
+      if ( type == kVCG_START || type == kVCG_END) continue;
+
+      auto cell = node->get_cell();
+      assert(cell);
+
+      result << cell->get_refer() << 
+      "(" << cell->get_x() << ", " << cell->get_y() << ") " <<
+      "R" << (cell->get_rotation() ? "90" : "0") << "\n";
+    }
+  } 
+  result << "\n";
+
+  result.close();
+}
+
+bool VCG::is_froms_cst_meet(uint8_t node_id) {
+  auto node = get_node(node_id);
+  assert(node);
+  auto cell = node->get_cell();
+  assert(cell);
+  auto cell_c1 = cell->get_c1();
+
+  bool ret = true;
+  for (auto from : node->get_froms()) {
+    auto from_cell = from->get_cell();
+    if (from_cell == nullptr) continue;
+
+    if (is_overlap_x(node->get_cell(), from->get_cell(), false)) {
+      auto cst = get_cst_y(node_id, from->get_id());
+      auto f_c3 = from_cell->get_c3();
+      if (f_c3._y + cst._x <= cell_c1._y && cell_c1._y <= f_c3._y + cst._y) {
+        continue;
+      }
+    } 
+
+    ret = false;
+    break;
+    
+  }  
+
+  return ret;
+}
+
+bool VCG::is_tos_cst_meet(uint8_t node_id) {
+  auto node = get_node(node_id);
+  assert(node);
+  auto cell = node->get_cell();
+  assert(cell);
+  auto cell_c3 = cell->get_c3();
+
+  bool ret = true;
+  for (auto to : node->get_tos()) {
+    auto to_cell = to->get_cell();
+    if (to_cell == nullptr) continue;
+
+    if (is_overlap_x(node->get_cell(), to->get_cell(), false)) {
+      auto cst = get_cst_y(node_id, to->get_id());
+      auto to_c1 = to_cell->get_c1();
+      if (cell_c3._y + cst._x <= to_c1._y && cell_c3._y + cst._y) {
+        continue;
+      }
+    }
+
+    ret = false;
+    break;
+  }
+
+  return ret;
+}
+
+uint8_t VCG::fail_cst_id() {
+  for (auto id : _place_stack) {
+    if (!is_froms_cst_meet(id)
+     || !is_tos_cst_meet(id)
+     || !is_box_cst_meet(id) 
+     )
+      return id;
+  }
+
+  return 0;
+}
+
+bool VCG::is_box_cst_meet(uint8_t node_id) {
+  auto node_check = get_node(node_id);
+  assert(node_check);
+  auto cell_check = node_check->get_cell();
+  assert(cell_check);
+
+  bool ret = true;
+  for (auto id : _place_stack) {
+    if (id == node_id) break;
+
+    auto node = get_node(id);
+    assert(node);
+    auto cell = node->get_cell();
+    assert(cell);
+
+    auto cst_x = get_cst_x(node_id, id);
+    auto cst_y = get_cst_y(node_id, id);
+    Rectangle small;
+    small._c1._x = cell_check->get_x() - cst_x._x;
+    small._c1._y = cell_check->get_y() - cst_y._x;
+    small._c3._x = cell_check->get_c3()._x + cst_x._x;
+    small._c3._y = cell_check->get_c3()._y + cst_y._x;
+
+    if (!is_overlap(small, cell->get_box(), false)) {
+      continue;
+    } else if (!is_overlap_y(cell_check, cell, false)) {
+      continue;
+    }
+
+    ret = false;
+    break;
+  }
+
+  return ret;
+}
+
+void VCG::fix_y_range(int min_y, int to_fix) {
+  auto end = get_node(0);
+  assert(end);
+  std::set<int> out_of_box;
+  std::set<int> inside_box;
+  for (auto top : end->get_froms()) {
+    auto cell = top->get_cell();
+    assert(cell);
+
+    if (cell->get_c3()._y >= min_y) {
+      out_of_box.insert(cell->get_cell_id());
+    } else {
+      inside_box.insert(cell->get_cell_id());
+    }
+  }
+
+  if (out_of_box.size() > inside_box.size()) {
+    for (auto cell_id : inside_box) {
+      auto cell = _cell_man->get_cell(cell_id);
+      assert(cell);
+
+      auto cell_range_y  = cell->get_y_range();
+      if (min_y + to_fix <= cell_range_y._y + cell->get_height()) {
+        cell->set_y(min_y + to_fix);
+      } else {
+        assert(_helper_map.count(cell->get_node_id()));
+        auto helper = _helper_map[cell->get_node_id()];
+        for (auto id : helper->_order) {
+          auto h_cell = get_cell(id);
+          
+        }
+      }
+    }
+  } else {
+    TODO();
+  }
 }
 
 }  // namespace  EDA_CHALLENGE_Q4

@@ -198,7 +198,9 @@ inline Regex::~Regex() {
   for (int i = 0; i < _num_regex; ++i) {
     regfree(_regexs + i);
   }
+  free(_regexs);
   _regexs = nullptr;
+  
   _tokens.clear();
   _rules = nullptr;
   _num_regex = 0;

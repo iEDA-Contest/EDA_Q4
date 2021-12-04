@@ -45,7 +45,7 @@ class Constraint {
   ~Constraint() = default;
 
   // getter
-  auto get_constraint(ConstraintType) const;
+  auto get_cst(ConstraintType) const;
   auto get_pattern() { return _pattern; }
 
   // setter
@@ -80,7 +80,7 @@ class ConstraintManager {
 
 // Constraint
 
-inline auto Constraint::get_constraint(ConstraintType type) const {
+inline auto Constraint::get_cst(ConstraintType type) const {
   ASSERT(0 <= type && type < kTotal, "Unknow constriant id:%d", type);
   return _constraint[type];
 }
@@ -93,10 +93,7 @@ inline void Constraint::set_constraint(ConstraintType type, uint16_t data) {
 // ConstraintManager
 inline ConstraintManager::~ConstraintManager() {
   for (auto p : _pattern_list) {
-    if (p) {
-      delete p;
-      p = nullptr;
-    }
+    delete p;
   }
   _pattern_list.clear();
 }

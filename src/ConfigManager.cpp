@@ -102,17 +102,12 @@ ConfigManager::ConfigManager(Token_List& tokens) {
 ConfigManager::~ConfigManager() {
   _id_refers_map.clear();
   for (auto m : _mem_config_list) {
-    if (m) {
-      delete m;
-      m = nullptr;
-    }
+    delete m;
   }
   _mem_config_list.clear();
+  
   for (auto s : _soc_config_list) {
-    if (s) {
-      delete s;
-      s = nullptr;
-    }
+    delete s;
   }
   _soc_config_list.clear();
 }

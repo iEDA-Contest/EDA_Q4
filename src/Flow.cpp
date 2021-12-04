@@ -35,8 +35,8 @@ void Flow::doStepTask() {
 
 void Flow::doTaskParseArgv() {
   const struct option table[] = {
-      {"conf", required_argument, nullptr, 'f'},
-      {"constraint", required_argument, nullptr, 's'},
+      {"cfg", required_argument, nullptr, 'f'},
+      {"cst", required_argument, nullptr, 's'},
       {"help", no_argument, nullptr, 'h'},
       {nullptr, 0, nullptr, 0}};
 
@@ -51,8 +51,8 @@ void Flow::doTaskParseArgv() {
         break;
       default:
         printf("Usage: %s [OPTION...] \n\n", _argv[0]);
-        printf("\t-f,--conf=FILE           input configure file\n");
-        printf("\t-s,--constraint=FILE     input constraint file\n");
+        printf("\t-f,--cfg=FILE     input configure file\n");
+        printf("\t-s,--cst=FILE     input constraint file\n");
         printf("\n");
         exit(0);
         break;
@@ -107,70 +107,17 @@ void Flow::doTaskFloorplan() {
     g.find_best_place();
     // !!!!! <<<<< floorplan !!!!!
     g.gen_GDS();
+    ++g._gds_file_num;
     _parser->reset_tokens();
 
     g_log <<" << end\n";
     g_log.flush();
+
+    g.gen_result();
   }
 
   delete _parser;
   _parser = nullptr;
 }
-
-
-
-/*
-void Flow::doTaskGDSGen() {
-#ifndef GDS
-  return;
-#endif
-  std::ofstream gds("/home/liangyuyao/EDA_CHALLENGE_Q4/output/myresult.gds");
-  assert(gds.is_open());
-
-  // gds head
-  gds << "HEADER 600\n";
-  gds << "BGNLIB\n";
-  gds << "LIBNAME DensityLib\n";
-  gds << "UNITS 1 1e-6\n";
-  gds << "\n\n";
-
-  // rectangle's four relative coordinates
-  // template
-  gds << "BGNSTR\n";
-  gds << "STRNAME area\n";
-  gds << "BOUNDARY\n";
-  gds << "LAYER 1\n";
-  gds << "DATATYPE 0\n";
-  gds << "XY\n";
-  // this five coordinates should be clockwise or anti-clockwise
-  gds << "0 : 0\n";
-  gds << "1000 : 0\n";
-  gds << "1000 : 2000\n";
-  gds << "0 : 2000\n";
-  gds << "0 : 0\n";
-  gds << "ENDEL\n";
-  gds << "ENDSTR\n";
-
-  // add rectangles into top module
-  gds << "\n\n";
-  gds << "BGNSTR\n";
-  gds << "STRNAME top\n";
-  gds << "\n\n";
-
-  // template
-  gds << "SREF\n";
-  gds << "SNAME area\n";
-  gds << "XY 0:0\n";  // c1 point
-  gds << "ENDEL\n";
-
-  //
-  gds << "\n\n";
-  gds << "ENDSTR\n";
-  gds << "ENDLIB\n";
-
-  gds.close();
-}
-*/
-
 
 }  // namespace EDA_CHALLENGE_Q4
