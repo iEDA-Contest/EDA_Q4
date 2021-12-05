@@ -102,18 +102,17 @@ void Flow::doTaskFloorplan() {
     VCG g(_parser->get_tokens());
     g.set_cell_man(_cell_man);
     g.set_constraint(constraint);
-    // !!!!! floorplan >>>>> !!!!!
-    // TODO();
+    // // !!!!! floorplan >>>>> !!!!!
     g.find_best_place();
-    // !!!!! <<<<< floorplan !!!!!
-    g.gen_GDS();
-    ++g._gds_file_num;
+    // g.gen_GDS();
+    // ++g._gds_file_num;
+    // // !!!!! <<<<< floorplan !!!!!
     _parser->reset_tokens();
 
     g_log <<" << end\n";
     g_log.flush();
 
-    g.gen_result();
+    // g.gen_result();
   }
 
   delete _parser;

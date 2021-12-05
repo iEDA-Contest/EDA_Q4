@@ -88,9 +88,9 @@ _last_merge_id(0) {
   init_tos();
   fill_id_grid();
   init_column_row_index();
-  
+  init_pattern_tree();
   // debug
-  // debug();
+  debug();
 }
 
 VCG::~VCG() {
@@ -114,6 +114,8 @@ VCG::~VCG() {
   _place_stack.clear();
 
   clear_Helper_map(); //
+
+  delete _tree;
 }
 
 /**
@@ -323,31 +325,32 @@ std::vector<GridType> VCG::get_smaller_module_row(GridType& grid, bool min) {
 }
 
 void VCG::find_best_place() {
-  // slice
-  auto modules = slice();
-  // pick
-  auto helpers = make_pick_helpers(modules);
-  make_helper_map(helpers);
-  place();
-  // record
-  std::map<int, bool> first_try;
-  for (size_t node_id = 1; node_id <= _place_stack.size(); ++node_id) {
-    auto cell = get_cell(node_id);
-    assert(cell);
-    first_try[cell->get_cell_id()] = cell->get_rotation();
-  }
-  // possibility
-  find_possible_combinations();
-  // recover
-  for (auto pair : first_try) {
-    auto cell = _cell_man->get_cell(pair.first);
-    assert(cell);
-    if (cell->get_rotation() != pair.second) {
-      cell->rotate();
-    }
-  }
-  place_cells_again();
-  try_legalize();
+  // slice2();
+  // // slice
+  // auto modules = slice();
+  // // pick
+  // auto helpers = make_pick_helpers(modules);
+  // make_helper_map(helpers);
+  // place();
+  // // record
+  // std::map<int, bool> first_try;
+  // for (size_t node_id = 1; node_id <= _place_stack.size(); ++node_id) {
+  //   auto cell = get_cell(node_id);
+  //   assert(cell);
+  //   first_try[cell->get_cell_id()] = cell->get_rotation();
+  // }
+  // // possibility
+  // find_possible_combinations();
+  // // recover
+  // for (auto pair : first_try) {
+  //   auto cell = _cell_man->get_cell(pair.first);
+  //   assert(cell);
+  //   if (cell->get_rotation() != pair.second) {
+  //     cell->rotate();
+  //   }
+  // }
+  // place_cells_again();
+  // try_legalize();
 }
 
 // get the smallest indivisible modules, and their order rely on slicing times
@@ -2165,17 +2168,440 @@ void VCG::fix_y_range(int min_y, int to_fix) {
       if (min_y + to_fix <= cell_range_y._y + cell->get_height()) {
         cell->set_y(min_y + to_fix);
       } else {
-        assert(_helper_map.count(cell->get_node_id()));
-        auto helper = _helper_map[cell->get_node_id()];
-        for (auto id : helper->_order) {
-          auto h_cell = get_cell(id);
+        // assert(_helper_map.count(cell->get_node_id()));
+        // auto helper = _helper_map[cell->get_node_id()];
+        // for (auto id : helper->_order) {
+        //   // auto h_cell = get_cell(id);
           
-        }
+        // }
       }
     }
   } else {
     TODO();
   }
+}
+
+// void VCG::slice2() {
+//   std::queue<GridType> queue;
+//   queue.push(_id_grid);
+
+//   std::queue<GridType> tmp;
+//   std::queue<GridType> min_que;
+//   while (queue.size()) {
+//     auto module = queue.front();
+//     queue.pop();
+
+//     auto smallers = slice_module(module);
+//     if (smallers.size() == 1) {
+//       min_que.push(smallers.front());
+//       smallers.pop();
+//     } else {
+//       while (smallers.size()) {
+//         tmp.push(smallers.front());
+//         smallers.pop();
+//       }
+
+//       if (queue.size() == 0 && tmp.size()) {
+//         queue.swap(tmp);
+//       }
+//     }
+//   }
+// }
+
+// /**
+//  * @brief if there exists one vertical division line, 
+//  *        cut along it only once. 
+//  * 
+//  * @return std::queue<GridType> size = 1 means failure, while 2 success
+//  */
+// std::queue<GridType> VCG::slice_vertical(GridType& grid) {
+//   ASSERT(grid.size() && grid[0].size(), "Grid data polluted");
+//   size_t max_row = grid[0].size();
+
+//   std::queue<GridType> result;
+
+//   if (grid.size() >= 1) {
+//     // grid.size() >= 1
+
+//     size_t col;
+//     for (col = 0; col < grid.size() - 1; ++col) {
+//       size_t row;
+//       for (row = 0; row < max_row; ++row) {
+//         ASSERT(grid[col].size() >= row + 1 
+//             || grid[col + 1].size() >= row + 1,
+//               "Fill grid first");
+
+//         if (grid[col][row] == grid[col + 1][row]) {
+//           break;
+//         }
+//       }
+
+//       if (row == max_row) {
+//         break;
+//       }
+//     }
+
+//     if (col < grid.size()) {
+//       GridType left;
+//       for (size_t col_left = 0; col_left <= col; ++col_left) {
+//         left.push_back(grid[col_left]);
+//       }
+//       result.push(left);
+      
+//       if (col + 1 < grid.size()) {
+//         GridType right;
+//         for (col = col + 1; col < grid.size(); ++col) {
+//           right.push_back(grid[col]);
+//         }
+//         result.push(right);
+//       }
+//     }
+
+//   } else {
+//     // grid.size() == 1
+//     result.push(grid);
+//   }
+
+//   return result;
+// }
+
+// /**
+//  * @brief if there exists one horizontal division line, 
+//  *        cut along it only once. 
+//  * 
+//  * @return std::queue<GridType> size = 1 means failure, while 2 success
+//  */
+// std::queue<GridType> VCG::slice_horizontal(GridType& grid) {
+//   ASSERT(grid.size() && grid[0].size(), "Grid data polluted");
+//   size_t max_row = grid[0].size();
+
+//   size_t row = 0;
+//   // for ()
+// }
+
+// std::queue<GridType> VCG::slice_module(GridType& grid) {
+//   std::queue<GridType> ret;
+//   ret = slice_vertical(grid);
+//   if (ret.size() == 1) {
+//     ret.pop();
+//     ret = slice_horizontal(grid);
+//   }
+
+//   return ret;
+// }
+
+void VCG::init_pattern_tree() {
+  auto map = make_id_type_map();
+  _tree = new PatternTree(_id_grid, map);
+}
+
+PatternTree::PatternTree(GridType& grid, std::map<uint8_t, VCGNodeType>& map) {
+  slice(grid, map);
+  debug_show_pt_grid_map();
+}
+
+void PatternTree::slice(const GridType& grid, std::map<uint8_t, VCGNodeType>& map) {
+  std::queue<std::pair<int, GridType>> queue;
+  queue.push({0, grid});
+  bool vertical;
+
+  while (queue.size()) {
+    auto pair = queue.front();
+    queue.pop();
+
+    auto smaller = slice_module(pair.second, vertical);
+    if (smaller.size() == 1) {
+      insert_leaves(pair.first, pair.second, map);
+    } else {
+      auto pt_node = new PTNode(_node_map.size(),
+                     vertical ? kPTVertical : KPTHorizontal);
+      ASSERT(_node_map.count(pt_node->get_pt_id()) == 0,
+            "Have existed pt_id = %d", pt_node->get_pt_id());
+      _node_map[pt_node->get_pt_id()] = pt_node;
+      
+      ASSERT(_node_map.count(pair.first), "Parent disappear");
+      auto parent = _node_map[pair.first];
+      parent->insert_child(pt_node);
+      pt_node->set_parent(parent);
+
+      while(smaller.size()) {
+        queue.push({pt_node->get_pt_id() ,smaller.front()});
+        smaller.pop();
+      }
+
+      // debug
+      debug_create_node(pt_node);
+    }
+  }
+}
+
+std::queue<GridType> PatternTree::slice_module(const GridType& grid, bool& vertical) {
+  std::queue<GridType> ret;
+  ret = slice_vertical(grid);
+  vertical = true;
+  if (ret.size() == 1) {
+    ret.pop();
+    ret = slice_horizontal(grid);
+    vertical = false;
+  }
+
+  return ret;
+}
+
+std::queue<GridType> PatternTree::slice_vertical(const GridType& grid) {
+  ASSERT(grid.size() && grid[0].size(), "Grid data polluted");
+  size_t max_row = grid[0].size();
+
+  std::queue<GridType> result;
+
+  if (grid.size() > 1) {
+    // grid.size() > 1
+
+    size_t col;
+    for (col = 0; col < grid.size() - 1; ++col) {
+      size_t row;
+      for (row = 0; row < max_row; ++row) {
+        ASSERT(grid[col].size() >= row + 1 
+            || grid[col + 1].size() >= row + 1,
+              "Fill grid first");
+
+        if (grid[col][row] == grid[col + 1][row]) {
+          break;
+        }
+      }
+
+      if (row == max_row) {
+        break;
+      }
+    }
+
+    
+    GridType left;
+    for (size_t col_left = 0; col_left <= col; ++col_left) {
+      left.push_back(grid[col_left]);
+    }
+    result.push(left);
+    
+    if (col + 1 < grid.size()) {
+      GridType right;
+      for (col = col + 1; col < grid.size(); ++col) {
+        right.push_back(grid[col]);
+      }
+      result.push(right);
+    }
+    
+
+  } else {
+    // grid.size() == 1
+    result.push(grid);
+  }
+
+  return result;
+}
+
+std::queue<GridType> PatternTree::slice_horizontal(const GridType& grid) {
+  ASSERT(grid.size() && grid[0].size(), "Grid data polluted");
+  size_t max_row = grid[0].size();
+
+  std::queue<GridType> result;
+
+  if (max_row > 1) {
+    // max_row > 1
+
+    size_t row;
+    for (row = 0; row < max_row - 1; ++row) {
+      size_t col;
+      for (col = 0; col < grid.size(); ++col) {
+        ASSERT(grid[col].size() >= row + 1 
+              || grid[col + 1].size() >= row + 1,
+                "Fill grid first");
+        
+        if (grid[col][row] == grid[col][row + 1]) {
+          break;
+        }
+      }
+
+      if (col == grid.size()) {
+        break;
+      }
+    }
+
+    
+    GridType down;
+    for (auto column : grid) {
+      if (column.begin() + row + 1 < column.begin() + max_row) {
+        std::vector<uint8_t> col_vec(column.begin() + row + 1, column.begin() + max_row);
+        down.push_back(col_vec);
+      }
+    }
+    if (down.size()) {
+      result.push(down);
+    }
+    
+    GridType top;
+    for (auto column : grid) {
+      if (column.begin() < column.begin() + row + 1) {
+        std::vector<uint8_t> col_vec(column.begin(), column.begin() + row + 1);
+        top.push_back(col_vec);
+      }
+    }
+    if (top.size()) {
+      result.push(top);
+    }
+
+  } else {
+    // max_row == 1
+    result.push(grid);
+  }
+
+  return result;
+}
+
+void PatternTree::insert_leaves( int parent_pt_id,
+                    const GridType& grid, 
+                    std::map<uint8_t, VCGNodeType>& map) {
+  auto order = get_topological_sort(grid);
+
+  if (order.size() == 1) {
+    
+    ASSERT(map.count(order[0]), "Can't find map between gird_id(%hhu) and VCGNodeType", order[0]);
+    auto pt_node = new PTNode(_node_map.size(), get_pt_type(map[order[0]]));
+    ASSERT(_node_map.count(pt_node->get_pt_id()) == 0,
+          "Have existed pt_id = %d", pt_node->get_pt_id());
+    _node_map[pt_node->get_pt_id()] = pt_node;
+    
+    ASSERT(_node_map.count(parent_pt_id), "Parent disappear");
+    auto parent = _node_map[parent_pt_id];
+    parent->insert_child(pt_node);
+    pt_node->set_parent(parent);
+
+    ASSERT(_pt_grid_map.count(pt_node->get_pt_id()) == 0,
+           "_pt_grid_map data polluted");
+    _pt_grid_map[pt_node->get_pt_id()] = order[0];
+
+    // debug
+    debug_create_node(pt_node);
+
+  } else {
+
+    auto pt_wheel = new PTNode(_node_map.size(), kPTWheel);
+    ASSERT(_node_map.count(pt_wheel->get_pt_id()) == 0,
+    "Have existed pt_id = %d", pt_wheel->get_pt_id());
+    _node_map[pt_wheel->get_pt_id()] = pt_wheel;
+
+    ASSERT(_node_map.count(parent_pt_id), "Parent disappear");
+    auto parent = _node_map[parent_pt_id];
+    parent->insert_child(pt_wheel);
+    pt_wheel->set_parent(parent);
+
+    // debug
+    debug_create_node(pt_wheel);
+
+    for (auto id : order) {
+      ASSERT(map.count(id), "Can't find map between gird_id(%hhu) and VCGNodeType", id);
+      auto pt_node = new PTNode(_node_map.size(), get_pt_type(map[id]));
+      ASSERT(_node_map.count(pt_node->get_pt_id()) == 0,
+      "Have existed pt_id = %d", pt_wheel->get_pt_id());
+      _node_map[pt_node->get_pt_id()] = pt_node;
+
+      pt_wheel->insert_child(pt_node);
+      pt_node->set_parent(pt_wheel);
+
+      ASSERT(_pt_grid_map.count(pt_node->get_pt_id()) == 0,
+           "_pt_grid_map data polluted");
+      _pt_grid_map[pt_node->get_pt_id()] = id;
+
+      // debug
+      debug_create_node(pt_node);
+    }
+
+  }
+}
+
+std::map<uint8_t, VCGNodeType> VCG::make_id_type_map() {
+  std::map<uint8_t, VCGNodeType> map;
+  for (auto column : _id_grid) {
+    for (auto id : column) {
+      auto node = get_node(id);
+      assert(node);
+      map[id] = node->get_type();
+    }
+  } 
+
+  return map;
+}
+
+std::vector<uint8_t> PatternTree::get_topological_sort(const GridType& grid) {
+  std::vector<uint8_t> order;
+
+  auto in_edges = get_in_edges(grid);  
+  std::queue<uint8_t> zero_in;
+  get_zero_in_nodes(grid, in_edges, zero_in);
+  while (zero_in.size()) {
+    auto visit_id = zero_in.front();
+    order.push_back(visit_id);
+    zero_in.pop();
+
+    in_edges.erase(visit_id);
+    for (auto& pair : in_edges) {
+      pair.second.erase(visit_id);
+    }
+    get_zero_in_nodes(grid, in_edges, zero_in);
+  }
+
+  return order;
+}
+
+void PatternTree::get_zero_in_nodes(const GridType& grid, 
+                       const std::map<uint8_t, std::set<uint8_t>>& in_edges, 
+                       std::queue<uint8_t>& zero_in) {
+  // store before
+  std::set<uint8_t> zero_in_set;
+  while (zero_in.size()) {
+    zero_in_set.insert(zero_in.front());
+    zero_in.pop();
+  }
+
+  for (auto pair : in_edges) {
+    if (pair.second.size() == 0 // zero in-edge
+     && zero_in_set.count(pair.first) == 0 // not cover
+       ) {
+      zero_in_set.insert(pair.first);
+    }
+  }
+
+  std::set<uint8_t> in_queue;
+  std::priority_queue<std::pair<size_t, uint8_t>, 
+                      std::vector<std::pair<size_t, uint8_t>>,
+                      std::greater<std::pair<size_t, uint8_t>>> min_col_2_id;
+  for (size_t col = 0; col < grid.size(); ++col) {
+    for (size_t row = 0; row < grid[col].size(); ++row) {
+      if (zero_in_set.count(grid[col][row])    // zero in-edge
+       && in_queue.count(grid[col][row]) == 0 // not in queue
+      ) {
+        min_col_2_id.push({col, grid[col][row]});
+        in_queue.insert(grid[col][row]);
+      }
+    }
+  }
+
+  while (min_col_2_id.size()) {
+    zero_in.push(min_col_2_id.top().second);
+    min_col_2_id.pop();
+  }
+}
+
+PatternTree::~PatternTree() {
+  _pt_grid_map.clear();
+
+  for (auto& pair : _node_map) {
+    delete pair.second;
+  }
+}
+
+PTNode::~PTNode() {
+  _parent = nullptr;
+  _children.clear();
 }
 
 }  // namespace  EDA_CHALLENGE_Q4

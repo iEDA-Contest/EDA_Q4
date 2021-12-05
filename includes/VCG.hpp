@@ -18,7 +18,71 @@ class PickTerm;
 struct CmpPickTerm;
 typedef std::priority_queue<PickTerm*, std::vector<PickTerm*>, CmpPickTerm> Prio_Pick;
 
+enum VCGNodeType { kVCG_START, kVCG_MEM, kVCG_SOC, kVCG_END };
 enum ModuleType { kMoColumn, kMoRow, kMoWheel, kMoSingle };
+enum PTNodeType { kPTNUll, kPTMem, kPTSoc, KPTHorizontal, kPTVertical, kPTWheel };
+
+class PTNode { 
+ public:
+  // constructor
+  PTNode() = default;
+  PTNode(int, PTNodeType);
+  ~PTNode();
+
+  // getter
+  auto get_type() const { return _type; }
+  auto get_parent() const { return _parent; }
+  auto get_pt_id() const { return _pt_id; }
+
+  // setter
+  void set_parent(PTNode*);
+
+  // function
+  void insert_child(PTNode*);
+ 
+ private:
+  // members
+  int _pt_id;
+  PTNodeType _type;
+  PTNode* _parent;
+  std::vector<PTNode*> _children;
+};
+
+class PatternTree {
+ public:
+  // constructor
+  PatternTree(GridType&, std::map<uint8_t, VCGNodeType>&);
+  ~PatternTree();
+
+  // getter
+
+  // setter
+
+  // function
+
+ private:
+  // getter
+
+  // setter
+
+  // function
+  void slice(const GridType&, std::map<uint8_t, VCGNodeType>&);
+  std::queue<GridType> slice_module(const GridType&, bool&);
+  std::queue<GridType> slice_vertical(const GridType&);
+  std::queue<GridType> slice_horizontal(const GridType&);
+  void insert_leaves(int, const GridType&, std::map<uint8_t, VCGNodeType>&);
+  std::vector<uint8_t> get_topological_sort(const GridType&);
+  std::map<uint8_t, std::set<uint8_t>> get_in_edges(const GridType&);
+  void get_zero_in_nodes(const GridType&, const std::map<uint8_t, std::set<uint8_t>>&, std::queue<uint8_t>&);
+  PTNodeType get_pt_type(VCGNodeType);
+  void debug_create_node(PTNode*);
+  void debug_show_pt_grid_map();
+
+  // members
+  std::map<int, PTNode*> _node_map;     // pt_id->pt_node
+  std::map<int, uint8_t> _pt_grid_map;  // pt_id->grid_value
+};
+
 
 struct CmpVCGNodeTopology {
   bool operator()(VCGNode*, VCGNode*);
@@ -115,7 +179,6 @@ class ModuleHelper {
   float _death;                 
 };
 
-enum VCGNodeType { kVCG_START, kVCG_MEM, kVCG_SOC, kVCG_END };
 
 class VCGNode {
  public:
@@ -212,6 +275,10 @@ class VCG {
   static size_t _gds_file_num;
 
  private:
+  // version 2
+  void init_pattern_tree();  
+  std::map<uint8_t, VCGNodeType> make_id_type_map();
+
   // getter
   size_t get_max_row(GridType&);
   std::vector<GridType> get_smaller_module(GridType&, bool min = false);
@@ -298,13 +365,14 @@ class VCG {
 
   // members
   std::vector<VCGNode*> _adj_list;  // Node0 is end, final Node is start
-  GridType _id_grid;                // [column][row]
+  GridType _id_grid;                // pattern matrix [column][row]
   CellManager* _cell_man;
   Constraint* _cst;
   std::map<uint8_t, ModuleHelper*> _helper_map;
   std::vector<uint8_t> _place_stack;
   std::list<MergeBox*> _merges;     // mainly for release
   size_t _last_merge_id;
+  PatternTree* _tree;
 };
 
 
@@ -842,6 +910,84 @@ inline bool VCG::is_overlap(int c1_min, int c1_max, int c2_min, int c2_max, bool
 inline bool VCG::is_overlap(Rectangle r1, Rectangle r2, bool edge) {
   return is_overlap(r1._c1._x, r1._c3._x, r2._c1._x, r2._c3._x, edge)
       && is_overlap(r1._c1._y, r1._c3._y, r2._c1._y, r2._c3._y, edge);
+}
+
+inline PTNode::PTNode(int pt_id, PTNodeType type):
+  _pt_id(pt_id), _type(type), _parent(nullptr) {
+    
+}
+
+inline void PTNode::insert_child(PTNode* pt_node) {
+  if (pt_node && pt_node->get_pt_id() != _pt_id) {
+    _children.push_back(pt_node);
+  }
+}
+
+inline void PTNode::set_parent(PTNode* parent) {
+  if (parent && parent != this) {
+    _parent = parent;
+  }
+}
+
+inline std::map<uint8_t, std::set<uint8_t>> PatternTree::get_in_edges(const GridType& grid) {
+  std::map<uint8_t, std::set<uint8_t>> visited;
+  for (auto column : grid) {
+    for (size_t row = 0; row < column.size(); ++row) {
+
+      if (visited.count(column[row]) == 0) {
+        visited[column[row]] = {};
+      } 
+      if ( row + 1 < column.size()
+        && column[row] != column[row + 1]
+        && visited[column[row]].count(column[row + 1]) == 0) {
+        visited[column[row]].insert(column[row+ 1]);
+      } 
+      
+    }
+  }
+
+  return visited;
+}
+
+inline PTNodeType PatternTree::get_pt_type(VCGNodeType vcg_type) {
+  switch (vcg_type) {
+    case kVCG_MEM: return kPTMem; 
+    case kVCG_SOC: return kPTSoc;
+
+    default: PANIC("Fail to change to PTNodeType by VCGNodeType = %d", vcg_type);
+  }
+}
+
+inline void PatternTree::debug_create_node(PTNode* pt_node) {
+#ifndef G_LOG
+  return;
+#endif
+  if (pt_node == nullptr) return;
+
+  g_log << "Create PTNode_" << pt_node->get_pt_id() << " ";
+  switch (pt_node->get_type()) {
+    case kPTSoc:        g_log << "Soc ";  break;
+    case kPTMem:        g_log << "Mem ";  break;
+    case KPTHorizontal: g_log << "Hrz ";  break;
+    case kPTVertical:   g_log << "Vtc ";  break;
+    case kPTWheel:      g_log << "Whe ";  break;
+
+    default: PANIC("Invalid create PTNodeType = %d", pt_node->get_type());
+  }
+  g_log << " parent_id = " << 
+      (pt_node->get_parent() ? pt_node->get_parent()->get_pt_id() : 0) << "\n";
+  g_log.flush();
+}
+
+inline void PatternTree::debug_show_pt_grid_map() {
+#ifndef G_LOG
+  return;
+#endif
+  for (auto pair : _pt_grid_map) {
+    g_log << "pt_id = " << pair.first
+          << ", grid_id = " << std::to_string(pair.second) << "\n";
+  }
+  g_log.flush();
 }
 
 }  // namespace EDA_CHALLENGE_Q4
