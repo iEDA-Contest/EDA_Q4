@@ -50,6 +50,7 @@ class Cell {
   auto get_cell_id() const { return _cell_id; }
   int get_refer_id();
   Rectangle get_box();
+  CellType get_cell_type();
 
   // setter
   void set_positon(int x, int y) { _c1._x = x, _c1._y = y; }
@@ -101,6 +102,7 @@ class CellManager {
   // function
   void insert_cell(CellType, Cell*);
   std::vector<Cell*> choose_cells(bool, CellPriority, ...);
+  std::vector<Cell*> choose_cells(CellType);
   void delete_cell(CellType, Cell*);
   std::vector<Cell*> retrieve();
   int cal_cell_area(const std::vector<int>&);
@@ -245,6 +247,14 @@ inline int CellManager::cal_cell_area(const std::vector<int>& cell_ids) {
     area += cell->get_area();
   }
   return area;
+}
+
+inline std::vector<Cell*> CellManager::choose_cells(CellType c_type) {
+  switch (c_type) {
+    case kCellTypeSoc: return _socs_aux;
+    case kCellTypeMem: return _mems_aux;
+    default: PANIC("Invalid celltype = %d", c_type);
+  }
 }
 
 }  // namespace EDA_CHALLENGE_Q4

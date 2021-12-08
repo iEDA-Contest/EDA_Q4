@@ -325,32 +325,7 @@ std::vector<GridType> VCG::get_smaller_module_row(GridType& grid, bool min) {
 }
 
 void VCG::find_best_place() {
-  // slice2();
-  // // slice
-  // auto modules = slice();
-  // // pick
-  // auto helpers = make_pick_helpers(modules);
-  // make_helper_map(helpers);
-  // place();
-  // // record
-  // std::map<int, bool> first_try;
-  // for (size_t node_id = 1; node_id <= _place_stack.size(); ++node_id) {
-  //   auto cell = get_cell(node_id);
-  //   assert(cell);
-  //   first_try[cell->get_cell_id()] = cell->get_rotation();
-  // }
-  // // possibility
-  // find_possible_combinations();
-  // // recover
-  // for (auto pair : first_try) {
-  //   auto cell = _cell_man->get_cell(pair.first);
-  //   assert(cell);
-  //   if (cell->get_rotation() != pair.second) {
-  //     cell->rotate();
-  //   }
-  // }
-  // place_cells_again();
-  // try_legalize();
+  traverse_tree();
 }
 
 // get the smallest indivisible modules, and their order rely on slicing times
@@ -2181,121 +2156,13 @@ void VCG::fix_y_range(int min_y, int to_fix) {
   }
 }
 
-// void VCG::slice2() {
-//   std::queue<GridType> queue;
-//   queue.push(_id_grid);
-
-//   std::queue<GridType> tmp;
-//   std::queue<GridType> min_que;
-//   while (queue.size()) {
-//     auto module = queue.front();
-//     queue.pop();
-
-//     auto smallers = slice_module(module);
-//     if (smallers.size() == 1) {
-//       min_que.push(smallers.front());
-//       smallers.pop();
-//     } else {
-//       while (smallers.size()) {
-//         tmp.push(smallers.front());
-//         smallers.pop();
-//       }
-
-//       if (queue.size() == 0 && tmp.size()) {
-//         queue.swap(tmp);
-//       }
-//     }
-//   }
-// }
-
-// /**
-//  * @brief if there exists one vertical division line, 
-//  *        cut along it only once. 
-//  * 
-//  * @return std::queue<GridType> size = 1 means failure, while 2 success
-//  */
-// std::queue<GridType> VCG::slice_vertical(GridType& grid) {
-//   ASSERT(grid.size() && grid[0].size(), "Grid data polluted");
-//   size_t max_row = grid[0].size();
-
-//   std::queue<GridType> result;
-
-//   if (grid.size() >= 1) {
-//     // grid.size() >= 1
-
-//     size_t col;
-//     for (col = 0; col < grid.size() - 1; ++col) {
-//       size_t row;
-//       for (row = 0; row < max_row; ++row) {
-//         ASSERT(grid[col].size() >= row + 1 
-//             || grid[col + 1].size() >= row + 1,
-//               "Fill grid first");
-
-//         if (grid[col][row] == grid[col + 1][row]) {
-//           break;
-//         }
-//       }
-
-//       if (row == max_row) {
-//         break;
-//       }
-//     }
-
-//     if (col < grid.size()) {
-//       GridType left;
-//       for (size_t col_left = 0; col_left <= col; ++col_left) {
-//         left.push_back(grid[col_left]);
-//       }
-//       result.push(left);
-      
-//       if (col + 1 < grid.size()) {
-//         GridType right;
-//         for (col = col + 1; col < grid.size(); ++col) {
-//           right.push_back(grid[col]);
-//         }
-//         result.push(right);
-//       }
-//     }
-
-//   } else {
-//     // grid.size() == 1
-//     result.push(grid);
-//   }
-
-//   return result;
-// }
-
-// /**
-//  * @brief if there exists one horizontal division line, 
-//  *        cut along it only once. 
-//  * 
-//  * @return std::queue<GridType> size = 1 means failure, while 2 success
-//  */
-// std::queue<GridType> VCG::slice_horizontal(GridType& grid) {
-//   ASSERT(grid.size() && grid[0].size(), "Grid data polluted");
-//   size_t max_row = grid[0].size();
-
-//   size_t row = 0;
-//   // for ()
-// }
-
-// std::queue<GridType> VCG::slice_module(GridType& grid) {
-//   std::queue<GridType> ret;
-//   ret = slice_vertical(grid);
-//   if (ret.size() == 1) {
-//     ret.pop();
-//     ret = slice_horizontal(grid);
-//   }
-
-//   return ret;
-// }
-
 void VCG::init_pattern_tree() {
   auto map = make_id_type_map();
   _tree = new PatternTree(_id_grid, map);
 }
 
-PatternTree::PatternTree(GridType& grid, std::map<uint8_t, VCGNodeType>& map) {
+PatternTree::PatternTree(GridType& grid, std::map<uint8_t, VCGNodeType>& map):
+  _cm(nullptr), _cst(nullptr) {
   slice(grid, map);
   debug_show_pt_grid_map();
 }
@@ -2314,7 +2181,8 @@ void PatternTree::slice(const GridType& grid, std::map<uint8_t, VCGNodeType>& ma
       insert_leaves(pair.first, pair.second, map);
     } else {
       auto pt_node = new PTNode(_node_map.size(),
-                     vertical ? kPTVertical : KPTHorizontal);
+                                vertical ? kPTVertical : KPTHorizontal,
+                                pair.second);
       ASSERT(_node_map.count(pt_node->get_pt_id()) == 0,
             "Have existed pt_id = %d", pt_node->get_pt_id());
       _node_map[pt_node->get_pt_id()] = pt_node;
@@ -2465,7 +2333,7 @@ void PatternTree::insert_leaves( int parent_pt_id,
   if (order.size() == 1) {
     
     ASSERT(map.count(order[0]), "Can't find map between gird_id(%hhu) and VCGNodeType", order[0]);
-    auto pt_node = new PTNode(_node_map.size(), get_pt_type(map[order[0]]));
+    auto pt_node = new PTNode(_node_map.size(), get_pt_type(map[order[0]]), grid);
     ASSERT(_node_map.count(pt_node->get_pt_id()) == 0,
           "Have existed pt_id = %d", pt_node->get_pt_id());
     _node_map[pt_node->get_pt_id()] = pt_node;
@@ -2484,7 +2352,7 @@ void PatternTree::insert_leaves( int parent_pt_id,
 
   } else {
 
-    auto pt_wheel = new PTNode(_node_map.size(), kPTWheel);
+    auto pt_wheel = new PTNode(_node_map.size(), kPTWheel, grid);
     ASSERT(_node_map.count(pt_wheel->get_pt_id()) == 0,
     "Have existed pt_id = %d", pt_wheel->get_pt_id());
     _node_map[pt_wheel->get_pt_id()] = pt_wheel;
@@ -2499,7 +2367,7 @@ void PatternTree::insert_leaves( int parent_pt_id,
 
     for (auto id : order) {
       ASSERT(map.count(id), "Can't find map between gird_id(%hhu) and VCGNodeType", id);
-      auto pt_node = new PTNode(_node_map.size(), get_pt_type(map[id]));
+      auto pt_node = new PTNode(_node_map.size(), get_pt_type(map[id]), {{id}});
       ASSERT(_node_map.count(pt_node->get_pt_id()) == 0,
       "Have existed pt_id = %d", pt_wheel->get_pt_id());
       _node_map[pt_node->get_pt_id()] = pt_node;
@@ -2552,9 +2420,9 @@ std::vector<uint8_t> PatternTree::get_topological_sort(const GridType& grid) {
   return order;
 }
 
-void PatternTree::get_zero_in_nodes(const GridType& grid, 
-                       const std::map<uint8_t, std::set<uint8_t>>& in_edges, 
-                       std::queue<uint8_t>& zero_in) {
+void PatternTree::get_zero_in_nodes(const GridType& grid /*in*/,
+                                    const std::map<uint8_t, std::set<uint8_t>>& in_edges /*in*/, 
+                                    std::queue<uint8_t>& zero_in /*out*/) {
   // store before
   std::set<uint8_t> zero_in_set;
   while (zero_in.size()) {
@@ -2576,7 +2444,7 @@ void PatternTree::get_zero_in_nodes(const GridType& grid,
                       std::greater<std::pair<size_t, uint8_t>>> min_col_2_id;
   for (size_t col = 0; col < grid.size(); ++col) {
     for (size_t row = 0; row < grid[col].size(); ++row) {
-      if (zero_in_set.count(grid[col][row])    // zero in-edge
+      if (zero_in_set.count(grid[col][row])   // zero in-edge
        && in_queue.count(grid[col][row]) == 0 // not in queue
       ) {
         min_col_2_id.push({col, grid[col][row]});
@@ -2597,11 +2465,157 @@ PatternTree::~PatternTree() {
   for (auto& pair : _node_map) {
     delete pair.second;
   }
+
+  _cm = nullptr;  // not release here
+  _cst = nullptr;       // not release here
 }
 
 PTNode::~PTNode() {
   _parent = nullptr;
   _children.clear();
+  _grid.clear();
+
+  for (auto p : _picks) {
+    delete p;
+  }
+  _picks.clear();
+}
+
+void VCG::traverse_tree() {
+  _tree->postorder_traverse();
+}
+
+void PatternTree::postorder_traverse() {
+  std::vector<int> preorder;
+  std::vector<int> postorder;
+
+  preorder.push_back(0);
+  while (preorder.size()) {
+    auto pre = preorder.back();
+    preorder.pop_back();
+    postorder.push_back(pre);
+
+    ASSERT(_node_map.count(pre), "pt_id = %d invalid", pre);
+    auto pt_node = _node_map[pre];
+    for (auto child : pt_node->get_children()) {
+      preorder.push_back(child->get_pt_id());
+    }
+  }
+
+  for (auto it = postorder.rbegin(); it != postorder.rend(); ++it) {
+    visit_pt_node(*it);
+    // printf("%2d, ", *it);
+  }
+  
+}
+
+void PatternTree::visit_pt_node(int pt_id) {
+  ASSERT(_node_map.count(pt_id), "pt_id = %d invalid", pt_id);
+
+  auto pt_node = _node_map[pt_id];
+  switch (pt_node->get_type()) {
+    case kPTMem:
+    case kPTSoc:        list_possibility(pt_node);  break;
+    case kPTVertical:   merge_hrz(pt_node);         break;
+    case KPTHorizontal: TODO();
+    case kPTWheel:      TODO();
+    
+    default: PANIC("Unhandled pt_node type = %d", pt_node->get_type());
+  }
+}
+
+void PatternTree::list_possibility(PTNode* pt_node) {
+  if (pt_node == nullptr) return;
+
+  CellType c_type = kCellTypeNull;
+  get_celltype(pt_node->get_type(), c_type);
+  auto cells = _cm->choose_cells(c_type);
+
+  ASSERT(_pt_grid_map.count(pt_node->get_pt_id()),
+          "no map of pt_id = %d", pt_node->get_pt_id());
+  auto grid_value = _pt_grid_map[pt_node->get_pt_id()];
+
+  PickHelper* p = nullptr;
+  for (auto cell : cells) {
+    p = new PickHelper(grid_value, cell->get_cell_id(), cell->get_rotation());
+    p->set_box(0, 0, cell->get_width(), cell->get_height());
+    pt_node->insert_pick(p);
+    
+    p = new PickHelper(grid_value, cell->get_cell_id(), !cell->get_rotation());
+    p->set_box(0, 0, cell->get_height(), cell->get_width());
+    pt_node->insert_pick(p);
+  }
+}
+
+void PatternTree::merge_hrz(PTNode* pt_node) {
+  assert(pt_node && pt_node->get_type() == kPTVertical);
+  auto children = pt_node->get_children();
+  ASSERT(children.size() == 2, "Topology error");
+  auto lchild = children[0];
+  auto rchild = children[1];
+
+  std::set<uint8_t> lefts_set1;
+  std::set<uint8_t> bottoms_set1;
+  std::vector<PickItem*> lefts_items;
+    for (auto lpick : lchild->get_picks()) {
+    lchild->get_grid_lefts(lefts_set1);
+    lchild->get_grid_bottoms(bottoms_set1);
+    get_cell_ids(lpick, lefts_set1, lefts_items);
+    adjust_interposer_left(lefts_items);
+
+    for (auto rpick : rchild->get_picks()) {
+      if (is_pick_repeat(lpick, rpick)) continue;
+      // place
+      
+    }
+  }
+}
+
+/**
+ * @brief Construct a new Pick Helper:: Pick Helper object 
+ * 
+ * @param first   cells chosen first
+ * @param second  cells chosen later
+ */
+PickHelper::PickHelper(PickHelper* first, PickHelper* second) {
+  ASSERT(first && second, "Please enter valid data");
+
+  for (auto item : first->get_items()) {
+    _items.push_back(new PickItem(*item));
+  }
+  for (auto item : second->get_items()) {
+    _items.push_back(new PickItem(*item));
+  }
+  for (auto item : _items) {
+    _id_item_map[item->_grid_value] = item;
+  }
+}
+
+bool PatternTree::is_pick_repeat(PickHelper* pick1, PickHelper* pick2) {
+  if (!pick1 || !pick2) return false;
+
+  for (auto item1 : pick1->get_items()) {
+    for (auto item2 : pick2->get_items()) {
+      if (item1->_cell_id == item2->_cell_id) {
+        return true;
+      }
+    }
+  }
+
+  return false;
+}
+
+void PatternTree::adjust_interposer_left(std::vector<PickItem*>& lefts_items) {
+  for (auto item : lefts_items) {
+    if (!is_interposer_left(item->_grid_value)) continue;
+
+    auto cell = _cm->get_cell(item->_cell_id);
+    ASSERT(cell, "Missing cell whose c_id = %d", item->_cell_id);
+
+    auto celltype = cell->get_cell_type();
+
+    TODO();
+  }
 }
 
 }  // namespace  EDA_CHALLENGE_Q4

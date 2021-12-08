@@ -238,4 +238,12 @@ int Cell::get_refer_id() {
   return _cell_id / id_deviate;
 }
 
+CellType Cell::get_cell_type() {
+  switch (_cell_id / id_deviate / id_base ) {
+    case kCellTypeMem:  return kCellTypeMem;
+    case kCellTypeSoc:  return kCellTypeSoc;
+    default:            return kCellTypeNull;
+  }
+}
+
 }  // namespace EDA_CHALLENGE_Q4

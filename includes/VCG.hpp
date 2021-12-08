@@ -22,23 +22,72 @@ enum VCGNodeType { kVCG_START, kVCG_MEM, kVCG_SOC, kVCG_END };
 enum ModuleType { kMoColumn, kMoRow, kMoWheel, kMoSingle };
 enum PTNodeType { kPTNUll, kPTMem, kPTSoc, KPTHorizontal, kPTVertical, kPTWheel };
 
+class PickItem {
+ public:
+  // constructor
+  PickItem(uint8_t, int, bool, int, int);
+  PickItem(const PickItem&);
+  ~PickItem() = default;
+
+  // member 
+  uint8_t _grid_value;
+  int _cell_id;
+  bool _rotation;
+  int _c1_x;
+  int _c1_y;
+};
+
+class PickHelper {
+ public:
+  // constructor
+  PickHelper(uint8_t, int, bool);
+  PickHelper(PickHelper*, PickHelper*);
+  ~PickHelper();
+
+  // getter
+  auto get_items() const { return _items; }
+  auto get_box() const { return _box; }
+
+  // setter
+  void set_box(const Rectangle& r) { _box = r; }
+  void set_box(int, int, int, int);
+  
+  // function
+  PickItem* get_item(uint8_t);
+
+ private:
+  // members
+  std::vector<PickItem*> _items;
+  Rectangle _box;
+  std::map<uint8_t, PickItem*> _id_item_map; // grid_value->item
+};
+
 class PTNode { 
+ typedef std::vector<PickHelper*> Picks; 
  public:
   // constructor
   PTNode() = default;
-  PTNode(int, PTNodeType);
+  PTNode(int, PTNodeType, const GridType&);
   ~PTNode();
 
   // getter
   auto get_type() const { return _type; }
   auto get_parent() const { return _parent; }
   auto get_pt_id() const { return _pt_id; }
+  auto get_children() const { return _children; }
+  auto get_picks() const { return _picks; }
+  auto get_grid() const { return _grid; }
 
   // setter
   void set_parent(PTNode*);
 
   // function
   void insert_child(PTNode*);
+  void insert_pick(PickHelper*);
+  void get_grid_lefts(std::set<uint8_t>&);
+  void get_grid_rights(std::set<uint8_t>&);
+  void get_grid_tops(std::set<uint8_t>&);
+  void get_grid_bottoms(std::set<uint8_t>&);
  
  private:
   // members
@@ -46,6 +95,8 @@ class PTNode {
   PTNodeType _type;
   PTNode* _parent;
   std::vector<PTNode*> _children;
+  GridType _grid;
+  Picks _picks;
 };
 
 class PatternTree {
@@ -57,8 +108,11 @@ class PatternTree {
   // getter
 
   // setter
+  void set_cst(Constraint*);
+  void set_cm(CellManager*);
 
   // function
+  void postorder_traverse();
 
  private:
   // getter
@@ -77,10 +131,24 @@ class PatternTree {
   PTNodeType get_pt_type(VCGNodeType);
   void debug_create_node(PTNode*);
   void debug_show_pt_grid_map();
+  void visit_pt_node(int);
+  void list_possibility(PTNode*);
+  void get_celltype(PTNodeType, CellType&);
+  void merge_hrz(PTNode*);
+  bool is_pick_repeat(PickHelper*, PickHelper*);
+  void get_cell_ids(PickHelper*, const std::set<uint8_t>&, std::vector<PickItem*>&);
+  void adjust_interposer_left(std::vector<PickItem*>&);
+  bool is_interposer_left(uint8_t);
+  void get_cst_x(CellType, Point&);
+  void get_cst_x(CellType, CellType, Point&);
+  void get_cst_y(CellType, Point&);
+  void get_cst_y(CellType, CellType, Point&);
 
   // members
   std::map<int, PTNode*> _node_map;     // pt_id->pt_node
   std::map<int, uint8_t> _pt_grid_map;  // pt_id->grid_value
+  CellManager* _cm;
+  Constraint* _cst;
 };
 
 
@@ -278,6 +346,7 @@ class VCG {
   // version 2
   void init_pattern_tree();  
   std::map<uint8_t, VCGNodeType> make_id_type_map();
+  void traverse_tree();
 
   // getter
   size_t get_max_row(GridType&);
@@ -530,6 +599,7 @@ inline void VCG::debug() { show_topology(); }
 inline void VCG::set_cell_man(CellManager* cm) {
   if (_cell_man == nullptr && cm != nullptr) {
     _cell_man = new CellManager(*cm);
+    _tree->set_cm(_cell_man);
   }
 }
 
@@ -617,6 +687,7 @@ inline Cell* VCG::get_cell(uint8_t id) {
 inline void VCG::set_constraint(Constraint* c) {
   if (c != nullptr && _cst == nullptr) {
     _cst = c;
+    _tree->set_cst(c);
   }
 }
 
@@ -912,8 +983,8 @@ inline bool VCG::is_overlap(Rectangle r1, Rectangle r2, bool edge) {
       && is_overlap(r1._c1._y, r1._c3._y, r2._c1._y, r2._c3._y, edge);
 }
 
-inline PTNode::PTNode(int pt_id, PTNodeType type):
-  _pt_id(pt_id), _type(type), _parent(nullptr) {
+inline PTNode::PTNode(int pt_id, PTNodeType type, const GridType& grid):
+  _pt_id(pt_id), _type(type), _parent(nullptr), _grid(grid) {
     
 }
 
@@ -985,10 +1056,163 @@ inline void PatternTree::debug_show_pt_grid_map() {
 #endif
   for (auto pair : _pt_grid_map) {
     g_log << "pt_id = " << pair.first
-          << ", grid_id = " << std::to_string(pair.second) << "\n";
+          << ", grid_value = " << std::to_string(pair.second) << "\n";
   }
   g_log.flush();
 }
+
+inline void PatternTree::set_cm(CellManager* cm) {
+  if (cm && _cm == nullptr) {
+    _cm = cm;
+  }
+}
+
+inline void PatternTree::set_cst(Constraint* cst) {
+  if (cst && _cst == nullptr) {
+    _cst = cst;
+  }
+}
+
+inline PickHelper::PickHelper(uint8_t grid_value, int cell_id, bool rotation) {
+  auto p = new PickItem(grid_value, cell_id, rotation, 0, 0);
+  _items.push_back(p);
+  _id_item_map[grid_value] = p;
+}
+
+inline void PTNode::insert_pick(PickHelper* pick) {
+  if (pick) {
+    _picks.push_back(pick);
+  }
+}
+
+inline void PatternTree::get_celltype(PTNodeType pt_type /*in*/, 
+                                      CellType& c_type /*out*/ ) {
+  switch (pt_type) {
+    case kPTMem: c_type = kCellTypeMem; break;
+    case kPTSoc: c_type = kCellTypeSoc; break;
+    default: PANIC("No exchange from pt_type = %d to cell_type", pt_type);
+  }
+}
+
+inline PickItem::PickItem(uint8_t grid_value, int cell_id, bool rotation, int c1_x, int c1_y) 
+  : _grid_value(grid_value), _cell_id(cell_id), _rotation(rotation), _c1_x(c1_x), _c1_y(c1_y) {
+}
+
+inline PickHelper::~PickHelper() {
+  for (auto i : _items) {
+    delete i;
+  }
+  _id_item_map.clear();
+}
+
+inline PickItem::PickItem(const PickItem& p) :
+ _grid_value(p._grid_value),
+ _cell_id(p._cell_id),
+ _rotation(p._rotation),
+ _c1_x(p._c1_x),
+ _c1_y(p._c1_y) {
+}
+
+inline void PickHelper::set_box(int c1_x, int c1_y, int c3_x, int c3_y) {
+  _box._c1._x = c1_x;
+  _box._c1._y = c1_y;
+  _box._c3._x = c3_x;
+  _box._c3._y = c3_y;
+}
+
+inline void PTNode::get_grid_lefts(std::set<uint8_t>& set /*out*/) {
+  set.clear();
+  for (auto id : _grid[0]) {
+    set.insert(id);
+  }
+}
+
+inline void PTNode::get_grid_rights(std::set<uint8_t>& set /*out*/) {
+  set.clear();
+  ASSERT(_grid.size(), "Data error");
+  for (auto id : _grid[_grid.size() - 1]) {
+    set.insert(id);
+  }
+}
+
+inline void PTNode::get_grid_tops(std::set<uint8_t>& set /*out*/) {
+  set.clear();
+  for (auto column : _grid) {
+    set.insert(column[0]);
+  }
+}
+
+inline void PTNode::get_grid_bottoms(std::set<uint8_t>& set /*out*/) {
+  set.clear();
+  for (auto column : _grid) {
+    set.insert(column[column.size() - 1]);
+  }
+}
+
+inline void PatternTree::get_cell_ids(PickHelper* helper, /*in*/
+                                      const std::set<uint8_t>& grid_set /*in*/,
+                                      std::vector<PickItem*>& items /*out*/) {
+  items.clear();
+  for (auto id : grid_set) {
+    auto item = helper->get_item(id);
+    if(item) {
+      items.push_back(item);
+    }
+  }
+}
+
+inline PickItem* PickHelper::get_item(uint8_t grid_value) {
+  return _id_item_map.count(grid_value) ? _id_item_map[grid_value] : nullptr;
+}
+
+inline bool PatternTree::is_interposer_left(uint8_t id) {
+  ASSERT(_node_map.count(0), "Missing data, pt_id = 0");
+  auto grid = _node_map[0]->get_grid();
+  ASSERT(grid.size(), "Data error");
+  
+  for (auto id_in_col : grid[0]) {
+    if ( id_in_col == id) {
+      return true;
+    }
+  }
+
+  return false;
+}
+
+inline void PatternTree::get_cst_x(CellType c_type, Point& range) {
+  switch (c_type) {
+    case kCellTypeMem: 
+      range._x = _cst->get_cst(kXMI_MIN); 
+      range._y = _cst->get_cst(kXMI_MAX); 
+      break;
+    case kCellTypeSoc:
+      range._x = _cst->get_cst(kXSI_MIN); 
+      range._y = _cst->get_cst(kXSI_MAX); 
+      break;
+    default: PANIC("Unknown interposer constraint for celltype = %d", c_type);
+  }
+}
+
+inline void PatternTree::get_cst_x(CellType c_type1, CellType c_type2, Point& range) {
+  static constexpr uint8_t shl = 2;
+  switch(c_type1 << shl | c_type2) {
+    case kCellTypeMem << shl | kCellTypeMem: 
+    case kCellTypeSoc << shl | kCellTypeSoc: 
+    case kCellTypeSoc << shl | kCellTypeMem: 
+    case kCellTypeMem << shl | kCellTypeSoc: 
+    break;
+  }
+  TODO();
+}
+
+inline void PatternTree::get_cst_y(CellType c_type, Point& range) {
+
+}
+
+inline void PatternTree::get_cst_y(CellType c_type1, CellType c_type2, Point& range) {
+
+}
+
 
 }  // namespace EDA_CHALLENGE_Q4
 #endif
