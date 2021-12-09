@@ -136,7 +136,9 @@ class PatternTree {
   bool is_pick_repeat(PickHelper*, PickHelper*);
   void get_cell_ids(PickHelper*, const std::set<uint8_t>&, std::vector<PickItem*>&);
   void adjust_interposer_left(std::vector<PickItem*>&);
+  void adjust_interposer_bottom(std::vector<PickItem*>&);
   bool is_interposer_left(uint8_t);
+  bool is_interposer_bottom(uint8_t);
   void get_cst_x(CellType, Point&);
   void get_cst_x(CellType, CellType, Point&);
   void get_cst_y(CellType, Point&);
@@ -739,6 +741,20 @@ inline bool PatternTree::is_interposer_left(uint8_t id) {
   
   for (auto id_in_col : grid[0]) {
     if ( id_in_col == id) {
+      return true;
+    }
+  }
+
+  return false;
+}
+
+inline bool PatternTree::is_interposer_bottom(uint8_t id) {
+  ASSERT(_node_map.count(0), "Missing data, pt_id = 0");
+  auto grid = _node_map[0]->get_grid();
+  ASSERT(grid.size(), "Data error");
+
+  for (auto col : grid) {
+    if(col[col.size() - 1] == id) {
       return true;
     }
   }

@@ -678,21 +678,29 @@ void PatternTree::merge_hrz(PTNode* pt_node) {
   auto lchild = children[0];
   auto rchild = children[1];
 
-  std::set<uint8_t> lefts_set1;
-  std::set<uint8_t> bottoms_set1;
-  std::vector<PickItem*> lefts_items;
-    for (auto lpick : lchild->get_picks()) {
-    lchild->get_grid_lefts(lefts_set1);
-    lchild->get_grid_bottoms(bottoms_set1);
-    get_cell_ids(lpick, lefts_set1, lefts_items);
-    adjust_interposer_left(lefts_items);
+  std::set<uint8_t> grid_set;
+  std::vector<PickItem*> place_items;
+  for (auto lpick : lchild->get_picks()) {
 
     for (auto rpick : rchild->get_picks()) {
       if (is_pick_repeat(lpick, rpick)) continue;
+
       // place
-      
-    }
-  }
+      lchild->get_grid_lefts(grid_set);
+      get_cell_ids(lpick, grid_set, place_items);
+      adjust_interposer_left(place_items);
+
+      lchild->get_grid_bottoms(grid_set);
+      get_cell_ids(lpick, grid_set, place_items);
+      adjust_interposer_bottom(place_items);
+
+      rchild->get_grid_bottoms(grid_set);
+      get_cell_ids(rpick, grid_set, place_items);
+      adjust_interposer_bottom(place_items);
+
+
+    } // end for auto rpick
+  } // end for auto lpick
 }
 
 /**
@@ -729,8 +737,8 @@ bool PatternTree::is_pick_repeat(PickHelper* pick1, PickHelper* pick2) {
   return false;
 }
 
-void PatternTree::adjust_interposer_left(std::vector<PickItem*>& lefts_items) {
-  for (auto item : lefts_items) {
+void PatternTree::adjust_interposer_left(std::vector<PickItem*>& left_items) {
+  for (auto item : left_items) {
     if (!is_interposer_left(item->_grid_value)) continue;
 
     auto cell = _cm->get_cell(item->_cell_id);
@@ -739,7 +747,23 @@ void PatternTree::adjust_interposer_left(std::vector<PickItem*>& lefts_items) {
     auto celltype = cell->get_cell_type();
     Point range;
     get_cst_x(celltype, range);
-    
+    cell->set_x(range._x);
+    cell->set_x_range(range);
+  }
+}
+
+void PatternTree::adjust_interposer_bottom(std::vector<PickItem*>& bottom_items) {
+  for (auto item : bottom_items) {
+    if (!is_interposer_bottom(item->_grid_value)) continue;
+
+    auto cell = _cm->get_cell(item->_cell_id);
+    ASSERT(cell, "Missing cell whose c_id = %d", item->_cell_id);
+
+    auto celltype = cell->get_cell_type();
+    Point range;
+    get_cst_y(celltype, range);
+    cell->set_y(range._x);
+    cell->set_y_range(range);
   }
 }
 
