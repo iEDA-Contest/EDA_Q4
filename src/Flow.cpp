@@ -12,7 +12,8 @@ namespace EDA_CHALLENGE_Q4 {
 void Flow::doStepTask() {
   switch (_step) {
     case kInit:
-      printf("\n----- EDA_CHALLENGE_Q4 -----\n");
+      g_log << "----- EDA_CHALLENGE_Q4 -----\n";
+      g_log.flush();
       set_step(kParseArgv);
       break;
     case kParseArgv:
@@ -25,10 +26,6 @@ void Flow::doStepTask() {
       break;
     case kFloorplan:
       doTaskFloorplan();
-      set_step(kGDSGen);
-      break;
-    case kGDSGen:
-      doTaskGDSGen();
       set_step(kEnd);
       break;
     default:
@@ -38,8 +35,8 @@ void Flow::doStepTask() {
 
 void Flow::doTaskParseArgv() {
   const struct option table[] = {
-      {"conf", required_argument, nullptr, 'f'},
-      {"constraint", required_argument, nullptr, 's'},
+      {"cfg", required_argument, nullptr, 'f'},
+      {"cst", required_argument, nullptr, 's'},
       {"help", no_argument, nullptr, 'h'},
       {nullptr, 0, nullptr, 0}};
 
@@ -54,8 +51,8 @@ void Flow::doTaskParseArgv() {
         break;
       default:
         printf("Usage: %s [OPTION...] \n\n", _argv[0]);
-        printf("\t-f,--conf=FILE           input configure file\n");
-        printf("\t-s,--constraint=FILE     input constraint file\n");
+        printf("\t-f,--cfg=FILE     input configure file\n");
+        printf("\t-s,--cst=FILE     input constraint file\n");
         printf("\n");
         exit(0);
         break;
@@ -72,6 +69,7 @@ void Flow::doTaskParseResources() {
   _constraint_man = new ConstraintManager(_parser->get_tokens());
   _cell_man = new CellManager(_conf_man);
   delete _parser;
+  _parser = nullptr;
 }
 
 void Flow::parseXml(char* file) {
@@ -96,68 +94,29 @@ void Flow::doTaskFloorplan() {
   // parse pattern to VCG
   _parser = new Regex(kPATTERN);
   for (auto constraint : _constraint_man->get_pattern_list()) {
+
+    g_log << "\n## " << constraint->get_pattern() << " >>\n";
+    g_log.flush();
+
     _parser->make_tokens(const_cast<char*>(constraint->get_pattern().c_str()));
     VCG g(_parser->get_tokens());
     g.set_cell_man(_cell_man);
-    // !!!!! floorplan >>>>> !!!!!
-    // TODO();
+    g.set_constraint(constraint);
+    // // !!!!! floorplan >>>>> !!!!!
     g.find_best_place();
-    // !!!!! <<<<< floorplan !!!!!
+    // g.gen_GDS();
+    // ++g._gds_file_num;
+    // // !!!!! <<<<< floorplan !!!!!
     _parser->reset_tokens();
+
+    g_log <<" << end\n";
+    g_log.flush();
+
+    // g.gen_result();
   }
 
   delete _parser;
-}
-
-void Flow::doTaskGDSGen() {
-#ifndef GDS
-  return;
-#endif
-  std::ofstream gds("/home/liangyuyao/EDA_CHALLENGE_Q4/output/myresult.gds");
-  assert(gds.is_open());
-
-  // gds head
-  gds << "HEADER 600\n";
-  gds << "BGNLIB\n";
-  gds << "LIBNAME DensityLib\n";
-  gds << "UNITS 1 1e-6\n";
-  gds << "\n\n";
-
-  // rectangle's four relative coordinates
-  // template
-  gds << "BGNSTR\n";
-  gds << "STRNAME area\n";
-  gds << "BOUNDARY\n";
-  gds << "LAYER 1\n";
-  gds << "DATATYPE 0\n";
-  gds << "XY\n";
-  // this five coordinates should be clockwise or anti-clockwise
-  gds << "0 : 0\n";
-  gds << "1000 : 0\n";
-  gds << "1000 : 2000\n";
-  gds << "0 : 2000\n";
-  gds << "0 : 0\n";
-  gds << "ENDEL\n";
-  gds << "ENDSTR\n";
-
-  // add rectangles into top module
-  gds << "\n\n";
-  gds << "BGNSTR\n";
-  gds << "STRNAME top\n";
-  gds << "\n\n";
-
-  // template
-  gds << "SREF\n";
-  gds << "SNAME area\n";
-  gds << "XY 0:0\n";  // c1 point
-  gds << "ENDEL\n";
-
-  //
-  gds << "\n\n";
-  gds << "ENDSTR\n";
-  gds << "ENDLIB\n";
-
-  gds.close();
+  _parser = nullptr;
 }
 
 }  // namespace EDA_CHALLENGE_Q4

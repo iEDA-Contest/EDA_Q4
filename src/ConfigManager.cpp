@@ -82,6 +82,7 @@ ConfigManager::ConfigManager(Token_List& tokens) {
         if (stack.back() == kTAG_REFERENCE_BEG) {
           auto id = id_base_tmp + op_list->size();
           conf->set_id_refer(id);
+          conf->set_refer(token.first);
           _id_refers_map[id] = token.first;
         } else {
           conf->set_value(stack.back(), atoi(token.first.c_str()));
@@ -101,17 +102,12 @@ ConfigManager::ConfigManager(Token_List& tokens) {
 ConfigManager::~ConfigManager() {
   _id_refers_map.clear();
   for (auto m : _mem_config_list) {
-    if (m) {
-      delete m;
-      m = nullptr;
-    }
+    delete m;
   }
   _mem_config_list.clear();
+  
   for (auto s : _soc_config_list) {
-    if (s) {
-      delete s;
-      s = nullptr;
-    }
+    delete s;
   }
   _soc_config_list.clear();
 }
