@@ -279,10 +279,11 @@ void VCG::find_best_place() {
 void VCG::init_pattern_tree() {
   auto map = make_id_type_map();
   _tree = new PatternTree(_id_grid, map);
+  _tree->set_vcg(this);
 }
 
 PatternTree::PatternTree(GridType& grid, std::map<uint8_t, VCGNodeType>& map):
-  _cm(nullptr), _cst(nullptr) {
+  _cm(nullptr), _cst(nullptr), _vcg(nullptr) {
   slice(grid, map);
   debug_show_pt_grid_map();
 }
@@ -591,7 +592,8 @@ PatternTree::~PatternTree() {
   }
 
   _cm = nullptr;  // not release here
-  _cst = nullptr;       // not release here
+  _cst = nullptr; // not release here
+  _vcg = nullptr; // not release here
 }
 
 PTNode::~PTNode() {

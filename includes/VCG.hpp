@@ -13,6 +13,7 @@
 namespace EDA_CHALLENGE_Q4 {
 
 class VCGNode;
+class VCG;
 class PickTerm;
 struct CmpPickTerm;
 
@@ -108,6 +109,7 @@ class PatternTree {
   // setter
   void set_cst(Constraint*);
   void set_cm(CellManager*);
+  void set_vcg(VCG*);
 
   // function
   void postorder_traverse();
@@ -150,6 +152,7 @@ class PatternTree {
   std::map<int, uint8_t> _pt_grid_map;  // pt_id->grid_value
   CellManager* _cm;
   Constraint* _cst;
+  VCG* _vcg;
 };
 
 class PickTerm {
@@ -271,7 +274,7 @@ class VCG {
   void show_froms_tos();
   void show_id_grid();
   void find_best_place();
-  // void gen_GDS();
+  void gen_GDS();
   void gen_result();
 
   // members

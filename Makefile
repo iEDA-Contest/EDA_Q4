@@ -1,7 +1,7 @@
 BUILD_DIR = build
 BIN = EDA_CHALLENGE_Q4.out
 OUTPUT_DIR = output
-TEST_CASE = /home/liangyuyao/EDA_CHALLENGE_Q4/resources/test1
+TEST_CASE = /home/lary/Desktop/EDA_Q4/EDA_Q4/resources/test1
 ARGV ?=\
 -f$(TEST_CASE)/configure.xml \
 -s$(TEST_CASE)/constraint.xml
