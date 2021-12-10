@@ -113,6 +113,10 @@ class PatternTree {
 
   // function
   void postorder_traverse();
+  void get_cst_x(CellType, Point&);
+  void get_cst_x(CellType, CellType, Point&);
+  void get_cst_y(CellType, Point&);
+  void get_cst_y(CellType, CellType, Point&);
 
  private:
   // getter
@@ -141,10 +145,6 @@ class PatternTree {
   void adjust_interposer_bottom(std::vector<PickItem*>&);
   bool is_interposer_left(uint8_t);
   bool is_interposer_bottom(uint8_t);
-  void get_cst_x(CellType, Point&);
-  void get_cst_x(CellType, CellType, Point&);
-  void get_cst_y(CellType, Point&);
-  void get_cst_y(CellType, CellType, Point&);
   void clear_queue(std::queue<GridType>&);
 
   // members
@@ -212,6 +212,7 @@ class VCGNode {
   auto get_column_index() const { return  _max_column_index - _h_placeholder + 1; }
   auto get_max_row_index() const { return _max_row_index; }
   auto get_row_index() const { return _max_row_index - _v_placeholder + 1; }
+  CellType get_cell_type();
 
   // setter
   void set_id(uint8_t id) { _id = id; }
@@ -293,12 +294,16 @@ class VCG {
 
   // setter
   void set_id_grid(size_t, size_t, uint8_t);
-  void set_module_box(uint8_t);
 
   // function
   void init_tos();
   void init_column_row_index();
   void debug();
+  void get_interposer_c3(int[4]);
+  void get_cst_x(uint8_t, Point&);
+  void get_cst_x(uint8_t, uint8_t, Point&);
+  void get_cst_y(uint8_t, Point&);
+  void get_cst_y(uint8_t, uint8_t, Point&);
  
   // members
   std::vector<VCGNode*> _adj_list;  // Node0 is end, final Node is start
@@ -392,7 +397,7 @@ inline void VCGNode::show_tos() {
 
 /*Not release memory, please manage it manly!*/
 inline void VCGNode::set_cell_null() {
-  _cell->set_node_id(0);
+  _cell->set_vcg_id(0);
   _cell = nullptr;
 }
 
@@ -495,7 +500,7 @@ inline void VCG::do_pick_cell(uint8_t id, Cell* cell) {
   if (is_id_valid(id) && cell != nullptr &&
       _adj_list[id]->get_cell() == nullptr) {
     //
-    cell->set_node_id(id);
+    cell->set_vcg_id(id);
     _adj_list[id]->set_cell(cell);
     _cell_man->delete_cell(get_cell_type(id), cell);
 
@@ -642,6 +647,12 @@ inline void PatternTree::set_cm(CellManager* cm) {
 inline void PatternTree::set_cst(Constraint* cst) {
   if (cst && _cst == nullptr) {
     _cst = cst;
+  }
+}
+
+inline void PatternTree::set_vcg(VCG* vcg) {
+  if (vcg && _vcg == nullptr) {
+    _vcg = vcg;
   }
 }
 
@@ -844,6 +855,53 @@ inline void PatternTree::get_cst_y( CellType c_type1 /*in*/,
 inline void PatternTree::clear_queue(std::queue<GridType>& q) {
   std::queue<GridType> empty;
   q.swap(empty);
+}
+
+inline void VCG::get_cst_x( uint8_t vcg_id /*in*/,
+                            Point& range /*out*/) {
+  ASSERT(is_id_valid(vcg_id), "No vcg_id = %d", vcg_id);
+  auto node = _adj_list[vcg_id];
+  _tree->get_cst_x(node->get_cell_type(), range);
+}
+
+inline void VCG::get_cst_x( uint8_t vcg_id1 /*in*/,
+                            uint8_t vcg_id2 /*in*/,
+                            Point& range /*out*/) {
+  ASSERT(is_id_valid(vcg_id1), "No vcg_id = %d", vcg_id1);
+  ASSERT(is_id_valid(vcg_id2), "No vcg_id = %d", vcg_id2);
+  auto node1 = _adj_list[vcg_id1];
+  auto node2 = _adj_list[vcg_id2];
+  _tree->get_cst_x( node1->get_cell_type(),
+                    node2->get_cell_type(),
+                    range);
+}
+
+inline void VCG::get_cst_y( uint8_t vcg_id /*in*/,
+                            Point& range /*out*/) {
+  ASSERT(is_id_valid(vcg_id), "No vcg_id = %d", vcg_id);
+  auto node = _adj_list[vcg_id];
+  _tree->get_cst_y(node->get_cell_type(), range);
+}
+
+inline void VCG::get_cst_y( uint8_t vcg_id1 /*in*/,
+                            uint8_t vcg_id2 /*in*/,
+                            Point& range /*out*/) {
+  ASSERT(is_id_valid(vcg_id1), "No vcg_id = %d", vcg_id1);
+  ASSERT(is_id_valid(vcg_id2), "No vcg_id = %d", vcg_id2);
+  auto node1 = _adj_list[vcg_id1];
+  auto node2 = _adj_list[vcg_id2];
+  _tree->get_cst_y( node1->get_cell_type(),
+                    node2->get_cell_type(),
+                    range);
+}
+
+inline CellType VCGNode::get_cell_type() {
+  switch (_type) {
+    case kVCG_MEM: return kCellTypeMem;
+    case kVCG_SOC: return kCellTypeSoc;
+
+    default: PANIC("No exchange from vcg_type = %d to cell_type", _type);
+  }
 }
 
 }  // namespace EDA_CHALLENGE_Q4

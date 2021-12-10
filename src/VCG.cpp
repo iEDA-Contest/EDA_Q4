@@ -700,7 +700,6 @@ void PatternTree::merge_hrz(PTNode* pt_node) {
       get_cell_ids(rpick, grid_set, place_items);
       adjust_interposer_bottom(place_items);
 
-
     } // end for auto rpick
   } // end for auto lpick
 }
@@ -816,9 +815,10 @@ void VCG::gen_GDS() {
     gds << "ENDSTR\n\n";
   }
 
-  auto c3_vec = cal_c3_of_interposer();
-  auto c3_x = std::min(c3_vec[0], c3_vec[1]);
-  auto c3_y = std::min(c3_vec[2], c3_vec[3]);
+  int c3_arr[4];
+  get_interposer_c3(c3_arr);
+  auto c3_x = std::min(c3_arr[0], c3_arr[1]);
+  auto c3_y = std::min(c3_arr[2], c3_arr[3]);
   // interposer
   gds << "BGNSTR\n";
   gds << "STRNAME interposer\n";
@@ -867,6 +867,52 @@ void VCG::gen_GDS() {
   gds << "ENDLIB\n";
 
   gds.close();
+}
+
+void VCG::get_interposer_c3(int ret_arr[4]/*out*/) {
+  Point constraint;
+
+  int min_y = 0;
+  int max_y = 0;
+  // top
+  for (auto column : _id_grid) {
+    auto cell = get_cell(column[0]);
+    if (cell == nullptr) continue;
+    
+    get_cst_y(cell->get_vcg_id(), constraint);
+    min_y = std::max(min_y, cell->get_c3()._y + constraint._x);
+    max_y = max_y == 0 ?
+            cell->get_c3()._y + constraint._y :
+            std::min(max_y, cell->get_c3()._y + constraint._y);
+  }
+
+  // right
+  int min_x = 0;
+  int max_x = 0;
+  if (_id_grid.size()) {
+    auto last_col = _id_grid[_id_grid.size() - 1];
+    for (size_t row = 0; row < last_col.size(); ++row) {
+      auto cell = get_cell(last_col[row]);
+      if (cell == nullptr) continue;
+
+      get_cst_x(cell->get_vcg_id(), constraint);
+      min_x = std::max(min_x, cell->get_c3()._x + constraint._x);
+      max_x = max_x == 0 ?
+              cell->get_c3()._x + constraint._y :
+              std::min(max_x, cell->get_c3()._x + constraint._y);
+    }
+  }
+
+  // debug
+  g_log << "\n";
+  g_log << "##Interposer_x " << min_x << " ~ " << max_x << "\n";
+  g_log << "##Interposer_y " << min_y << " ~ " << max_y << "\n";
+  g_log.flush();
+
+  ret_arr[0] = min_x;
+  ret_arr[1] = max_x;
+  ret_arr[2] = min_y;
+  ret_arr[3] = max_y;
 }
 
 }  // namespace  EDA_CHALLENGE_Q4
