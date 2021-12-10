@@ -769,4 +769,104 @@ void PatternTree::adjust_interposer_bottom(std::vector<PickItem*>& bottom_items)
   }
 }
 
+void VCG::gen_GDS() {
+#ifndef GDS
+  return;
+#endif
+  std::string fname = "../output/myresult" + std::to_string(_gds_file_num) + ".gds";
+  std::fstream gds;
+  gds.open(fname, std::ios::out);
+  assert(gds.is_open());
+
+  // gds head
+  gds << "HEADER 600\n";
+  gds << "BGNLIB\n";
+  gds << "LIBNAME DensityLib\n";
+  gds << "UNITS 1 1e-6\n";
+  gds << "\n\n";
+
+  size_t cell_num = 0;
+  for (auto node : _adj_list) {
+    if (node->get_type() == kVCG_START || node->get_type() == kVCG_END)
+      continue;
+
+    Cell* cell = node->get_cell();
+    if (cell == nullptr) {
+      g_log << "[gen_GDS()] node_" << std::to_string(node->get_id()) << "miss cell\n";
+      continue; 
+    }
+    ++cell_num;
+
+    // rectangle's four relative coordinates
+    // template
+    gds << "BGNSTR\n";
+    gds << "STRNAME " << cell->get_refer() << std::to_string(node->get_id()) << "\n";
+    gds << "BOUNDARY\n";
+    gds << "LAYER " << std::to_string(cell_num) << "\n";
+    gds << "DATATYPE 0\n";
+    gds << "XY\n";
+    // this five coordinates should be clockwise or anti-clockwise
+    gds << "0 : 0\n";
+    gds << std::to_string(cell->get_width()) << " : 0\n";
+    gds << std::to_string(cell->get_width()) << " : "
+        << std::to_string(cell->get_height()) << "\n";
+    gds << "0 : " << std::to_string(cell->get_height()) << "\n";
+    gds << "0 : 0\n";
+    gds << "ENDEL\n";
+    gds << "ENDSTR\n\n";
+  }
+
+  auto c3_vec = cal_c3_of_interposer();
+  auto c3_x = std::min(c3_vec[0], c3_vec[1]);
+  auto c3_y = std::min(c3_vec[2], c3_vec[3]);
+  // interposer
+  gds << "BGNSTR\n";
+  gds << "STRNAME interposer\n";
+  gds << "BOUNDARY\n";
+  gds << "LAYER 0\n";
+  gds << "DATATYPE 0\n";
+  gds << "XY\n";
+  gds << "0 : 0\n";
+  gds << "0 : " << c3_y << "\n";
+  gds << c3_x << " : " << c3_y << "\n";
+  gds << c3_x << " : 0\n";
+  gds << "0 : 0\n";
+  gds << "ENDEL\n";
+  gds << "ENDSTR\n\n";
+
+  // add rectangles into top module
+  gds << "\n\n";
+  gds << "BGNSTR\n";
+  gds << "STRNAME top\n";
+  gds << "\n\n";
+
+  for (auto node : _adj_list) {
+    if (node->get_type() == kVCG_START || node->get_type() == kVCG_END)
+      continue;
+
+    Cell* cell = node->get_cell();
+    if (cell == nullptr) continue;
+
+    // template
+    gds << "SREF\n";
+    gds << "SNAME " << cell->get_refer() << std::to_string(node->get_id()) << "\n";
+    gds << "XY " << std::to_string(cell->get_c1()._x) << ": "
+        << std::to_string(cell->get_c1()._y) << "\n";  // c1 point
+    gds << "ENDEL\n";
+  }
+
+  // interposer
+  gds << "SREF\n";
+  gds << "SNAME interposer\n";
+  gds << "XY  0 : 0\n";  // c1 point
+  gds << "ENDEL\n";
+
+  // gds end
+  gds << "\n\n";
+  gds << "ENDSTR\n";
+  gds << "ENDLIB\n";
+
+  gds.close();
+}
+
 }  // namespace  EDA_CHALLENGE_Q4

@@ -104,9 +104,9 @@ void Flow::doTaskFloorplan() {
     g.set_constraint(constraint);
     // // !!!!! floorplan >>>>> !!!!!
     g.find_best_place();
-    // g.gen_GDS();
-    // ++g._gds_file_num;
     // // !!!!! <<<<< floorplan !!!!!
+    // g.gen_GDS();
+    ++g._gds_file_num;
     _parser->reset_tokens();
 
     g_log <<" << end\n";
