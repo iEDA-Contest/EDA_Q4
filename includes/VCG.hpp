@@ -12,11 +12,7 @@
 
 namespace EDA_CHALLENGE_Q4 {
 
-class VCGNode;
 class VCG;
-class PickTerm;
-struct CmpPickTerm;
-
 
 enum VCGNodeType { kVCG_START, kVCG_MEM, kVCG_SOC, kVCG_END };
 enum PTNodeType { kPTNUll, kPTMem, kPTSoc, KPTHorizontal, kPTVertical, kPTWheel };
@@ -29,7 +25,7 @@ class PickItem {
   ~PickItem() = default;
 
   // member 
-  uint8_t _grid_value;
+  uint8_t _vcg_id;
   int _cell_id;
   bool _rotation;
   int _c1_x;
@@ -46,19 +42,27 @@ class PickHelper {
   // getter
   auto get_items() const { return _items; }
   auto get_box() const { return _box; }
+  auto get_death() const { return _death; }
 
   // setter
   void set_box(const Rectangle& r) { _box = r; }
   void set_box(int, int, int, int);
+  void set_death(float d) { _death = d; }
   
   // function
   PickItem* get_item(uint8_t);
+  void get_items(const std::set<uint8_t>&, std::vector<PickItem*>&);
 
  private:
   // members
   std::vector<PickItem*> _items;
+  std::map<uint8_t, PickItem*> _id_item_map; // vcg_id->item
   Rectangle _box;
-  std::map<uint8_t, PickItem*> _id_item_map; // grid_value->item
+  float _death;
+};
+
+struct CmpPickHelperDeath {
+  bool operator()(PickHelper*, PickHelper*);
 };
 
 class PTNode { 
@@ -140,12 +144,19 @@ class PatternTree {
   void get_celltype(PTNodeType, CellType&);
   void merge_hrz(PTNode*);
   bool is_pick_repeat(PickHelper*, PickHelper*);
-  void get_cell_ids(PickHelper*, const std::set<uint8_t>&, std::vector<PickItem*>&);
   void adjust_interposer_left(std::vector<PickItem*>&);
   void adjust_interposer_bottom(std::vector<PickItem*>&);
   bool is_interposer_left(uint8_t);
   bool is_interposer_bottom(uint8_t);
   void clear_queue(std::queue<GridType>&);
+  void get_box_range_fit_litems(const std::vector<PickItem*>&, const std::vector<PickItem*>&, const Rectangle&, Point&);
+  bool is_overlap_y(Cell*, Cell*, bool);
+  bool is_overlap_x(Cell*, Cell*, bool);
+  bool is_overlap(int, int, int, int, bool);
+  void debug_GDS(PickHelper*);
+  void get_helper_box(PickHelper*, Rectangle&);
+  int get_cells_area(PickHelper*);
+  void set_cell_status(Cell*, PickItem*);
 
   // members
   std::map<int, PTNode*> _node_map;     // pt_id->pt_node
@@ -153,37 +164,6 @@ class PatternTree {
   CellManager* _cm;
   Constraint* _cst;
   VCG* _vcg;
-};
-
-class PickTerm {
- typedef std::vector<std::pair<int, bool>> Picks_Type;
- public:
-  // constructor
-  PickTerm() = default;
-  PickTerm(const PickTerm&);
-  PickTerm(Cell*);
-  ~PickTerm();
-
-  // getter
-  auto get_death() const { return _death; }
-  auto get_picks_num() const { return _picks.size(); }
-  auto get_box() const { return _box; }
-  std::vector<int> get_picks();
-
-  // setter
-  void set_death(float death) { _death = death; }
-  void set_box(int, int, int, int);
-  void set_box(const Rectangle&);
-
-  // function
-  bool is_picked(Cell*);
-  void insert(Cell*);
-
- private:
-  // members
-  Picks_Type _picks;
-  float _death;
-  Rectangle* _box;          // ignore position. Minimal bounding box in theory
 };
 
 class VCGNode {
@@ -194,7 +174,7 @@ class VCGNode {
   ~VCGNode();
 
   // getter
-  auto get_id() const { return _id; }
+  auto get_id() const { return _vcg_id; }
   auto get_type() const { return _type; }
   auto get_v_placeholder() const { return _v_placeholder; }
   auto get_h_placeholder() const { return _h_placeholder; }
@@ -215,7 +195,7 @@ class VCGNode {
   CellType get_cell_type();
 
   // setter
-  void set_id(uint8_t id) { _id = id; }
+  void set_id(uint8_t id) { _vcg_id = id; }
   void set_cell(Cell* cell) { _cell = cell; }
   void set_cell_null();
   void set_max_column_index(int index) { _max_column_index = index; }
@@ -238,7 +218,7 @@ class VCGNode {
   static bool cmp_min_node(VCGNode*, VCGNode*);
 
   // members
-  uint8_t _id;                   // VCG Node id
+  uint8_t _vcg_id;                   // VCG Node id
   VCGNodeType _type;             // VCG Node type
   uint8_t _v_placeholder;        // if "^" occur
   uint8_t _h_placeholder;        // if "<" occur
@@ -315,12 +295,12 @@ class VCG {
 
 // VCGNode
 inline VCGNode::VCGNode(VCGNodeType type)
-    : _id(0), _v_placeholder(1), _h_placeholder(1), _cell(nullptr) {
+    : _vcg_id(0), _v_placeholder(1), _h_placeholder(1), _cell(nullptr) {
   _type = type;
 }
 
 inline VCGNode::VCGNode(VCGNodeType type, uint8_t id)
-    : _id(id), _v_placeholder(1), _h_placeholder(1), _cell(nullptr) {
+    : _vcg_id(id), _v_placeholder(1), _h_placeholder(1), _cell(nullptr) {
   _type = type;
 }
 
@@ -528,34 +508,34 @@ inline void VCG::retrieve_all_cells() {
   }
 }
 
-// inline bool VCG::is_overlap_y(Cell* c1, Cell* c2, bool edge) {
-//   if (c1 == nullptr || c2 == nullptr) return true;
+inline bool PatternTree::is_overlap_y(Cell* c1, Cell* c2, bool edge) {
+  if (c1 == nullptr || c2 == nullptr) return true;
 
-//   auto c1_min_y = c1->get_y();
-//   auto c1_max_y = c1_min_y + c1->get_height();
-//   auto c2_min_y = c2->get_y();
-//   auto c2_max_y = c2_min_y + c2->get_height();
-//   return is_overlap(c1_min_y, c1_max_y, c2_min_y, c2_max_y, edge);
-// }
+  auto c1_min_y = c1->get_y();
+  auto c1_max_y = c1_min_y + c1->get_height();
+  auto c2_min_y = c2->get_y();
+  auto c2_max_y = c2_min_y + c2->get_height();
+  return is_overlap(c1_min_y, c1_max_y, c2_min_y, c2_max_y, edge);
+}
 
-// inline bool VCG::is_overlap_x(Cell* c1, Cell* c2, bool egde) {
-//   if (c1 == nullptr || c2 == nullptr) return true;
+inline bool PatternTree::is_overlap_x(Cell* c1, Cell* c2, bool egde) {
+  if (c1 == nullptr || c2 == nullptr) return true;
 
-//   auto c1_min_x = c1->get_x();
-//   auto c1_max_x = c1_min_x + c1->get_width();
-//   auto c2_min_x = c2->get_x();
-//   auto c2_max_x = c2_min_x + c2->get_width();
+  auto c1_min_x = c1->get_x();
+  auto c1_max_x = c1_min_x + c1->get_width();
+  auto c2_min_x = c2->get_x();
+  auto c2_max_x = c2_min_x + c2->get_width();
 
-//   return is_overlap(c1_min_x, c1_max_x, c2_min_x, c2_max_x, egde);
-// }
+  return is_overlap(c1_min_x, c1_max_x, c2_min_x, c2_max_x, egde);
+}
 
-// inline bool VCG::is_overlap(int c1_min, int c1_max, int c2_min, int c2_max, bool edge) {
-//   ASSERT(c1_min <= c1_max && c2_min <= c2_max, "Misuse function");
+inline bool PatternTree::is_overlap(int c1_min, int c1_max, int c2_min, int c2_max, bool edge) {
+  ASSERT(c1_min <= c1_max && c2_min <= c2_max, "Misuse function");
 
-//   return edge ? 
-//         !(c1_min > c2_max || c1_max < c2_min) :
-//         !(c1_min >= c2_max || c1_max <= c2_min); 
-// }
+  return edge ? 
+        !(c1_min > c2_max || c1_max < c2_min) :
+        !(c1_min >= c2_max || c1_max <= c2_min); 
+}
 
 // inline bool VCG::is_overlap(Rectangle r1, Rectangle r2, bool edge) {
 //   return is_overlap(r1._c1._x, r1._c3._x, r2._c1._x, r2._c3._x, edge)
@@ -656,7 +636,8 @@ inline void PatternTree::set_vcg(VCG* vcg) {
   }
 }
 
-inline PickHelper::PickHelper(uint8_t grid_value, int cell_id, bool rotation) {
+inline PickHelper::PickHelper(uint8_t grid_value, int cell_id, bool rotation)
+  :_death(0) {
   auto p = new PickItem(grid_value, cell_id, rotation, 0, 0);
   _items.push_back(p);
   _id_item_map[grid_value] = p;
@@ -678,18 +659,19 @@ inline void PatternTree::get_celltype(PTNodeType pt_type /*in*/,
 }
 
 inline PickItem::PickItem(uint8_t grid_value, int cell_id, bool rotation, int c1_x, int c1_y) 
-  : _grid_value(grid_value), _cell_id(cell_id), _rotation(rotation), _c1_x(c1_x), _c1_y(c1_y) {
+  : _vcg_id(grid_value), _cell_id(cell_id), _rotation(rotation), _c1_x(c1_x), _c1_y(c1_y) {
 }
 
 inline PickHelper::~PickHelper() {
   for (auto i : _items) {
     delete i;
   }
+  _items.clear();
   _id_item_map.clear();
 }
 
 inline PickItem::PickItem(const PickItem& p) :
- _grid_value(p._grid_value),
+ _vcg_id(p._vcg_id),
  _cell_id(p._cell_id),
  _rotation(p._rotation),
  _c1_x(p._c1_x),
@@ -732,20 +714,19 @@ inline void PTNode::get_grid_bottoms(std::set<uint8_t>& set /*out*/) {
   }
 }
 
-inline void PatternTree::get_cell_ids(PickHelper* helper, /*in*/
-                                      const std::set<uint8_t>& grid_set /*in*/,
-                                      std::vector<PickItem*>& items /*out*/) {
+inline void PickHelper::get_items(const std::set<uint8_t>& grid_set /*in*/, 
+                                  std::vector<PickItem*>& items /*out*/) {
   items.clear();
   for (auto id : grid_set) {
-    auto item = helper->get_item(id);
+    auto item = get_item(id);
     if(item) {
       items.push_back(item);
     }
   }
 }
 
-inline PickItem* PickHelper::get_item(uint8_t grid_value) {
-  return _id_item_map.count(grid_value) ? _id_item_map[grid_value] : nullptr;
+inline PickItem* PickHelper::get_item(uint8_t vcg_id) {
+  return _id_item_map.count(vcg_id) ? _id_item_map[vcg_id] : nullptr;
 }
 
 inline bool PatternTree::is_interposer_left(uint8_t id) {
@@ -901,6 +882,22 @@ inline CellType VCGNode::get_cell_type() {
     case kVCG_SOC: return kCellTypeSoc;
 
     default: PANIC("No exchange from vcg_type = %d to cell_type", _type);
+  }
+}
+
+inline bool CmpPickHelperDeath::operator()(PickHelper* p1, PickHelper* p2) {
+  if (!p1 || !p2) return false;
+
+  return p1->get_death() < p2->get_death();
+}
+
+inline void PatternTree::set_cell_status(Cell* cell, PickItem* item) {
+  if (cell && item && cell->get_cell_id() == item->_cell_id) {
+    cell->set_x(item->_c1_x);
+    cell->set_y(item->_c1_y);
+    if (cell->get_rotation() != item->_rotation) {
+      cell->rotate();
+    }
   }
 }
 
