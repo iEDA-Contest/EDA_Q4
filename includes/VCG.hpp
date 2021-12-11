@@ -127,6 +127,7 @@ class PatternTree {
   void get_cst_y(CellType, Point&);
   void get_cst_y(CellType, CellType, Point&);
   void set_cell_status(Cell*, PickItem*);
+  PTNode* get_biggest_column(uint8_t);
 
  private:
   // getter
@@ -165,10 +166,11 @@ class PatternTree {
   int get_cells_area(PickHelper*);
   void merge_vtc(PTNode*);
   bool insert_death_que(DeathQue&, PickHelper*);
+  int get_pt_id(uint8_t);
 
   // members
   std::map<int, PTNode*> _node_map;     // pt_id->pt_node
-  std::map<int, uint8_t> _pt_grid_map;  // pt_id->grid_value
+  std::map<int, uint8_t> _pt_grid_map;  // pt_id->vcg_id
   CellManager* _cm;
   Constraint* _cst;
   VCG* _vcg;
@@ -226,7 +228,7 @@ class VCGNode {
   static bool cmp_min_node(VCGNode*, VCGNode*);
 
   // members
-  uint8_t _vcg_id;                   // VCG Node id
+  uint8_t _vcg_id;               // VCG Node id
   VCGNodeType _type;             // VCG Node type
   uint8_t _v_placeholder;        // if "^" occur
   uint8_t _h_placeholder;        // if "<" occur
@@ -266,6 +268,7 @@ class VCG {
   void find_best_place();
   void gen_GDS();
   void gen_result();
+  void update_pitem(Cell*);
 
   // members
   static size_t _gds_file_num;
@@ -293,7 +296,7 @@ class VCG {
   void get_cst_x(uint8_t, uint8_t, Point&);
   void get_cst_y(uint8_t, Point&);
   void get_cst_y(uint8_t, uint8_t, Point&);
-  void set_cells_by_tree();
+  void set_cells_by_helper(PickHelper*);
  
   // members
   std::vector<VCGNode*> _adj_list;  // Node0 is end, final Node is start
@@ -301,6 +304,7 @@ class VCG {
   CellManager* _cm;
   Constraint* _cst;
   PatternTree* _tree;
+  PickHelper* _helper;
 };
 
 // VCGNode
@@ -495,8 +499,8 @@ inline void VCG::do_pick_cell(uint8_t vcg_id, Cell* cell) {
     _cm->delete_cell(get_cell_type(vcg_id), cell);
 
     // debug
-    g_log << "nodeid = " << std::to_string(vcg_id) << ", cell_id = " << cell->get_refer() << "\n";
-    g_log.flush();
+    // g_log << "nodeid = " << std::to_string(vcg_id) << ", cell_id = " << cell->get_refer() << "\n";
+    // g_log.flush();
   }
 }
 
@@ -922,7 +926,7 @@ inline PickHelper::PickHelper(PickHelper* helper)
 }
 
 inline PTNode* PatternTree::get_pt_node(int pt_id) {
-  return _node_map.count(pt_id) ? _node_map[0] : nullptr;
+  return _node_map.count(pt_id) ? _node_map[pt_id] : nullptr;
 }
 
 }  // namespace EDA_CHALLENGE_Q4

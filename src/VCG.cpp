@@ -8,7 +8,8 @@ namespace EDA_CHALLENGE_Q4 {
 size_t VCG::_gds_file_num = 0;
 static constexpr size_t max_combination = 10;
 
-VCG::VCG(Token_List& tokens) : _cm(nullptr), _cst(nullptr) {
+VCG::VCG(Token_List& tokens) 
+  : _cm(nullptr), _cst(nullptr), _helper(nullptr) {
   _adj_list.push_back(new VCGNode(kVCG_END));
   VCGNode* start = new VCGNode(kVCG_START);
 
@@ -108,9 +109,11 @@ VCG::~VCG() {
   }
   _id_grid.clear();
 
-  _cst = nullptr;  // must not release here!
+  _cst = nullptr;    // must not release here!
 
   delete _tree;
+
+  _helper = nullptr; // must not release here!
 }
 
 /**
@@ -235,48 +238,64 @@ void VCG::fill_id_grid() {
 
 void VCG::find_best_place() {
   traverse_tree();
-  set_cells_by_tree();
-  
+  // root first
+  auto root = _tree->get_pt_node(0);
+  ASSERT(root, "Root of Pattern Tree missing");
+  auto root_picks = root->get_picks();
+  ASSERT(root_picks.size(), "No Picks in root node");
+  auto best = root_picks[0];
+  set_cells_by_helper(best);
+
+  //
+  _tree->get_biggest_column(3);
+
+  // debug
+  // for (auto helper : root_picks) {
+  //   undo_all_picks();
+  //   set_cells_by_helper(helper);
+  //   gen_GDS();
+  // }
 }
 
-// void VCG::gen_result() {
-//   std::fstream result("../output/result.txt", std::ios::app | std::ios::out);
-//   assert(result.is_open());
+void VCG::gen_result() {
+  std::fstream result("../output/result.txt", std::ios::app | std::ios::out);
+  assert(result.is_open());
 
-//   std::string pattern = _cst->get_pattern();
-//   std::string::size_type pos = 0;
-//   const std::string sub_str = "&#60;";
-//   while ((pos = pattern.find(sub_str)) != std::string::npos) {
-//     pattern.replace(pos, sub_str.length(), "<");
-//   }
+  std::string pattern = _cst->get_pattern();
+  std::string::size_type pos = 0;
+  const std::string sub_str = "&#60;";
+  while ((pos = pattern.find(sub_str)) != std::string::npos) {
+    pattern.replace(pos, sub_str.length(), "<");
+  }
 
-//   if (pattern[pattern.size() - 1] == ' ') {
-//     pattern.replace(pattern.size() - 1, 1, "\0");
-//   }
-//   result << "PATTERN \"" << pattern << "\" ";
+  if (pattern[pattern.size() - 1] == ' ') {
+    pattern.replace(pattern.size() - 1, 1, "\0");
+  }
+  result << "PATTERN \"" << pattern << "\" ";
 
-//   auto box_c3 = cal_c3_of_interposer();
-//   if (box_c3[0] > box_c3[1]
-//    || box_c3[2] > box_c3[3]) {
-//      result << "NA\n";
-//   } else {
-//     result << box_c3[0] << " * " << box_c3[2] << "\n";
-//     for (auto node : _adj_list) {
-//       auto type = node->get_type();
-//       if ( type == kVCG_START || type == kVCG_END) continue;
+  int c3_arr[4];
+  get_interposer_c3(c3_arr);
+  if (c3_arr[0] > c3_arr[1]
+   || c3_arr[2] > c3_arr[3]) {
+     result << "NA\n";
+  } else {
+    result << c3_arr[0] << " * " << c3_arr[2] << "\n";
+    for (auto node : _adj_list) {
+      auto type = node->get_type();
+      if ( type == kVCG_START || type == kVCG_END) continue;
 
-//       auto cell = node->get_cell();
-//       assert(cell);
+      auto cell = node->get_cell();
+      assert(cell);
 
-//       result << cell->get_refer() << 
-//       "(" << cell->get_x() << ", " << cell->get_y() << ") " <<
-//       "R" << (cell->get_rotation() ? "90" : "0") << "\n";
-//     }
-//   } 
-//   result << "\n";
+      result << cell->get_refer() << 
+      "(" << cell->get_x() << ", " << cell->get_y() << ") " <<
+      "R" << (cell->get_rotation() ? "90" : "0") << "\n";
+    }
+  } 
+  result << "\n";
 
-//   result.close();
-// }
+  result.close();
+}
 
 void VCG::init_pattern_tree() {
   auto map = make_id_type_map();
@@ -652,6 +671,11 @@ void PatternTree::visit_pt_node(int pt_id) {
     default: PANIC("Unhandled pt_node type = %d", pt_node->get_type());
   }
 
+  if (pt_node->get_picks().size() == 0) {
+    g_log << "No picks generate in pt_id = "
+          << pt_node->get_pt_id() << "\n";
+  }
+
   // debug
   for (auto pick : pt_node->get_picks()) {
     debug_GDS(pick);
@@ -740,7 +764,7 @@ void PatternTree::merge_hrz(PTNode* pt_node) {
         x_move = range._y;
 
         g_log << "[HRZ merging violate] occur in pt_node = " 
-              << std::to_string(pt_node->get_pt_id()) 
+              << std::to_string(pt_node->get_pt_id())  << ", "
               << "range.min_x = " << range._x << ", "
               << "range.max_x = " << range._y << "\n";
       }
@@ -1191,7 +1215,7 @@ void PatternTree::merge_vtc(PTNode* pt_node) {
         y_move = range._y;
 
         g_log << "[VTC merging violate] occur in pt_node = " 
-              << std::to_string(pt_node->get_pt_id()) 
+              << std::to_string(pt_node->get_pt_id()) << ", "
               << "range.min_y = " << range._x << ", "
               << "range.max_y = " << range._y << "\n";
       }
@@ -1260,19 +1284,49 @@ bool PatternTree::insert_death_que(DeathQue& queue, PickHelper* helper) {
   return false;
 }
 
-void VCG::set_cells_by_tree() {
-  auto root = _tree->get_pt_node(0);
-  ASSERT(root, "Root of Pattern Tree missing");
-  auto root_picks = root->get_picks();
-  ASSERT(root_picks.size(), "No Picks in root node");
-  auto best = root_picks[0];
-  for (auto item : best->get_items()) {
+void VCG::set_cells_by_helper(PickHelper* helper) {
+  _helper = helper;
+
+  for (auto item : _helper->get_items()) {
     auto cell = _cm->get_cell(item->_cell_id);
     assert(cell);
 
     _tree->set_cell_status(cell, item);
     do_pick_cell(item->_vcg_id, cell);
   }
+}
+
+void VCG::update_pitem(Cell* cell) {
+  if (!cell || !_helper) return;
+
+  TODO();
+}
+
+PTNode* PatternTree::get_biggest_column(uint8_t vcg_id) {
+  auto pt_id = get_pt_id(vcg_id);
+  ASSERT(pt_id >= 0, "No pt_node contains vcg_id = %d", vcg_id);
+  auto pt_node = get_pt_node(pt_id);
+  ASSERT(pt_node, "No pt_node whose pt_id = %d", pt_id);
+
+  PTNode* parent = pt_node->get_parent();
+  while (  parent
+        && parent->get_type() != kPTVertical
+  ) {
+    pt_node = parent;
+    parent = pt_node->get_parent();
+  }
+  
+  return pt_node;
+}
+
+int PatternTree::get_pt_id(uint8_t vcg_id) {
+  for (auto pair : _pt_grid_map) {
+    if (pair.second == vcg_id) {
+      return pair.first;
+    }
+  }
+
+  return -1;
 }
 
 }  // namespace  EDA_CHALLENGE_Q4
