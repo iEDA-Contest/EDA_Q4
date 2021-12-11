@@ -64,21 +64,21 @@ class Cell {
   void set_x_range(Point range) { _x_range = range; }
   void set_y_range(Point range) { _y_range = range; }
   void set_cell_id(int cell_id) { _cell_id = cell_id; }
-  
+
   // function
   void rotate();
   bool is_square() { return _width == _height; }
 
  private:
   // members
-  Point _c1;          // left bottom coordinate of the rectangle
-  bool _rotation;     // 90 degree or not
+  Point _c1;       // left bottom coordinate of the rectangle
+  bool _rotation;  // 90 degree or not
   uint16_t _width;
   uint16_t _height;
   std::string _refer;
-  uint8_t _vcg_id;    // this should not be 0, as 0 is end node
-  Point _x_range;      // if c1 in this range, then x meets constraint
-  Point _y_range;      // if c1 in this range, then y meets constraint
+  uint8_t _vcg_id;  // this should not be 0, as 0 is end node
+  Point _x_range;   // if c1 in this range, then x meets constraint
+  Point _y_range;   // if c1 in this range, then y meets constraint
   int _cell_id;
 };
 
@@ -88,6 +88,9 @@ class CellManager {
   CellManager(ConfigManager*);
   CellManager(const CellManager&);
   ~CellManager();
+
+  // sjc add.
+  std::map<int, Cell*> get_cells() const { return _id_map; }
 
   // getter
   auto get_mems() const { return _mems; }
@@ -114,7 +117,8 @@ class CellManager {
 
   // function
   void init_cells(CellType, std::vector<Config*>);
-  std::vector<Cell*> choose_range(bool, CellType, uint16_t, uint16_t, uint16_t, uint16_t);
+  std::vector<Cell*> choose_range(bool, CellType, uint16_t, uint16_t, uint16_t,
+                                  uint16_t);
   std::vector<Cell*> choose_ratioWH_max(bool, CellType);
   std::vector<Cell*> choose_death_y(bool, CellType, Rectangle&, int, int);
   std::vector<Cell*> choose_death_x(bool, CellType, Rectangle&, int, int);
@@ -127,7 +131,7 @@ class CellManager {
   // members
   std::vector<Cell*> _mems;
   std::vector<Cell*> _socs;
-  std::vector<Cell*> _mems_aux; // to record, please not to change members
+  std::vector<Cell*> _mems_aux;  // to record, please not to change members
   std::vector<Cell*> _socs_aux;
   std::map<int, Cell*> _id_map;
 };
@@ -158,17 +162,11 @@ inline float Cell::get_ratioWH_max() {
 }
 
 inline float Cell::get_flex_x() const {
-  return 1 - (
-              (_c1._x - _x_range._x) / 
-              (_x_range._y - _x_range._x)
-            ); 
+  return 1 - ((_c1._x - _x_range._x) / (_x_range._y - _x_range._x));
 }
 
 inline float Cell::get_flex_y() const {
-  return 1 - (
-              (_c1._y - _y_range._x) / 
-              (_y_range._y - _y_range._x)
-            ); 
+  return 1 - ((_c1._y - _y_range._x) / (_y_range._y - _y_range._x));
 }
 
 inline Rectangle Cell::get_box() {
@@ -202,7 +200,8 @@ inline std::vector<Cell*>* CellManager::get_list(bool aux, CellType type) {
   return op_list;
 }
 
-inline std::vector<Cell*> CellManager::choose_ratioWH_max(bool aux, CellType tar_type) {
+inline std::vector<Cell*> CellManager::choose_ratioWH_max(bool aux,
+                                                          CellType tar_type) {
   std::vector<Cell*>* op_list = get_list(aux, tar_type);
   assert(op_list != nullptr);
 
@@ -251,9 +250,12 @@ inline int CellManager::cal_cell_area(const std::vector<int>& cell_ids) {
 
 inline std::vector<Cell*> CellManager::choose_cells(CellType c_type) {
   switch (c_type) {
-    case kCellTypeSoc: return _socs_aux;
-    case kCellTypeMem: return _mems_aux;
-    default: PANIC("Invalid celltype = %d", c_type);
+    case kCellTypeSoc:
+      return _socs_aux;
+    case kCellTypeMem:
+      return _mems_aux;
+    default:
+      PANIC("Invalid celltype = %d", c_type);
   }
 }
 
