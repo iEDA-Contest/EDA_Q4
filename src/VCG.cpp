@@ -1069,10 +1069,7 @@ void PatternTree::debug_GDS(PickHelper* helper) {
 
   for (auto item : helper->get_items()) {
     auto cell = _cm->get_cell(item->_cell_id);
-    if (cell == nullptr) {
-      g_log << "cell_id = " << item->_cell_id << "missing\n";
-      continue;
-    }
+    if (cell == nullptr) continue;
 
     set_cell_status(cell, item);
     _vcg->do_pick_cell(item->_vcg_id, cell);
@@ -1224,6 +1221,14 @@ void PatternTree::merge_vtc(PTNode* pt_node) {
     delete bpick_new;
   } // end for auto bpick
 
+  while (death_queue.size()) {
+    auto pick = death_queue.top();
+    death_queue.pop();
+    pt_node->insert_pick(pick);
+
+    // debug
+    // debug_GDS(pick);
+  }
 }
 
 /**
