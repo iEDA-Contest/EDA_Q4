@@ -40,7 +40,7 @@ VCG::VCG(Token_List& tokens) : _cell_man(nullptr), _cst(nullptr) {
         _adj_list.push_back(from);
         to->insert_from(from);
         to = from;
-        set_id_grid(column, row, from->get_id());
+        set_id_grid(column, row, from->get_vcg_id());
         from = nullptr;
         break;
       case kSOC:
@@ -49,7 +49,7 @@ VCG::VCG(Token_List& tokens) : _cell_man(nullptr), _cst(nullptr) {
         _adj_list.push_back(from);
         to->insert_from(from);
         to = from;
-        set_id_grid(column, row, from->get_id());
+        set_id_grid(column, row, from->get_vcg_id());
         from = nullptr;
         break;
 
@@ -58,13 +58,13 @@ VCG::VCG(Token_List& tokens) : _cell_man(nullptr), _cst(nullptr) {
         ASSERT(row != 0, "'^' occurs at first row");
         ++row;
         to->inc_v_placeholder();
-        set_id_grid(column, row, to->get_id());
+        set_id_grid(column, row, to->get_vcg_id());
         break;
       case kHORIZONTAL:
         ASSERT(column > 1, "'<' occurs at first column");
         ++row;
         from = _adj_list[_id_grid[column - 2][row - 1]];
-        set_id_grid(column, row, from->get_id());
+        set_id_grid(column, row, from->get_vcg_id());
         from->inc_h_placeholder();
         to->insert_last_from(from);
         to = from;
@@ -129,9 +129,9 @@ void VCG::init_tos() {
     to = queue.front();
     queue.pop();
     for (auto from : to->get_froms()) {
-      if (line_up[from->get_id()] == false) {
+      if (line_up[from->get_vcg_id()] == false) {
         queue.push(from);
-        line_up[from->get_id()] = true;
+        line_up[from->get_vcg_id()] = true;
       }
       from->insert_to(to);
     }
@@ -691,40 +691,43 @@ void PatternTree::merge_hrz(PTNode* pt_node) {
                       CmpPickHelperDeath> death_queue;
   Rectangle box;
   for (auto lpick : lchild->get_picks()) {
+    PickHelper* lpick_new = new PickHelper(lpick);
+
     // interposer
     lchild->get_grid_lefts(lpick_vcg_id_set);
-    lpick->get_items(lpick_vcg_id_set, lpick_items);
+    lpick_new->get_items(lpick_vcg_id_set, lpick_items);
     adjust_interposer_left(lpick_items);
 
     lchild->get_grid_bottoms(lpick_vcg_id_set);
-    lpick->get_items(lpick_vcg_id_set, lpick_items);
+    lpick_new->get_items(lpick_vcg_id_set, lpick_items);
     adjust_interposer_bottom(lpick_items);
 
     // update left box
-    get_helper_box(lpick, box);
-    lpick->set_box(box);
+    get_helper_box(lpick_new, box);
+    lpick_new->set_box(box);
 
     lchild->get_grid_rights(lpick_vcg_id_set);
-    lpick->get_items(lpick_vcg_id_set, lpick_items);
+    lpick_new->get_items(lpick_vcg_id_set, lpick_items);
 
     for (auto rpick : rchild->get_picks()) {
-      if (is_pick_repeat(lpick, rpick)) continue;
+      if (is_pick_repeat(lpick_new, rpick)) continue;
 
+      PickHelper* rpick_new = new PickHelper(rpick);
       // interposer
       rchild->get_grid_bottoms(rpick_vcg_id_set);
-      rpick->get_items(rpick_vcg_id_set, rpick_items);
+      rpick_new->get_items(rpick_vcg_id_set, rpick_items);
       adjust_interposer_bottom(rpick_items);
 
       // update right box
-      get_helper_box(rpick, box);
-      rpick->set_box(box);
+      get_helper_box(rpick_new, box);
+      rpick_new->set_box(box);
 
       // two pt_node 
       rchild->get_grid_lefts(rpick_vcg_id_set);
-      rpick->get_items(rpick_vcg_id_set, rpick_items);
+      rpick_new->get_items(rpick_vcg_id_set, rpick_items);
 
       Point range;
-      get_box_range_fit_litems(rpick_items, lpick_items, lpick->get_box(), range);
+      get_box_range_fit_litems(rpick_items, lpick_items, lpick_new->get_box(), range);
       int x_move = range._x;
       if (range._x > range._y) {
         x_move = range._y;
@@ -735,15 +738,19 @@ void PatternTree::merge_hrz(PTNode* pt_node) {
               << "range.max_x = " << range._y << "\n";
       }
 
-      for (auto r_item: rpick->get_items()) {
+      for (auto r_item: rpick_new->get_items()) {
         r_item->_c1_x += x_move;
       }
 
-      PickHelper* new_helper = new PickHelper(lpick, rpick);
+      PickHelper* new_helper = new PickHelper(lpick_new, rpick_new);
+      
       get_helper_box(new_helper, box);
       new_helper->set_box(box);
       int cell_area = get_cells_area(new_helper);
       new_helper->set_death(1.0 * (box.get_area() - cell_area) / box.get_area());
+
+      // debug
+      // debug_GDS(new_helper);
 
       // choose minimal death 
       if (death_queue.size() < max_combination) {
@@ -759,12 +766,13 @@ void PatternTree::merge_hrz(PTNode* pt_node) {
           delete new_helper;
         }
 
-      }
+      } // end choose minimal death 
 
-      // debug
-      // debug_GDS(rpick);
+      delete rpick_new;
 
     } // end for auto rpick
+
+    delete lpick_new;
   } // end for auto lpick
 
   while (death_queue.size()) {
@@ -773,7 +781,7 @@ void PatternTree::merge_hrz(PTNode* pt_node) {
     pt_node->insert_pick(pick);
 
     // debug
-    debug_GDS(pick);
+    // debug_GDS(pick);
   }
 }
 
@@ -868,7 +876,7 @@ void VCG::gen_GDS() {
 
     Cell* cell = node->get_cell();
     if (cell == nullptr) {
-      g_log << "[gen_GDS()] node_" << std::to_string(node->get_id()) << "miss cell\n";
+      g_log << "[gen_GDS()] node_" << std::to_string(node->get_vcg_id()) << "miss cell\n";
       continue; 
     }
     ++cell_num;
@@ -876,7 +884,7 @@ void VCG::gen_GDS() {
     // rectangle's four relative coordinates
     // template
     gds << "BGNSTR\n";
-    gds << "STRNAME " << cell->get_refer() << std::to_string(node->get_id()) << "\n";
+    gds << "STRNAME " << cell->get_refer() << std::to_string(node->get_vcg_id()) << "\n";
     gds << "BOUNDARY\n";
     gds << "LAYER " << std::to_string(cell_num) << "\n";
     gds << "DATATYPE 0\n";
@@ -926,7 +934,7 @@ void VCG::gen_GDS() {
 
     // template
     gds << "SREF\n";
-    gds << "SNAME " << cell->get_refer() << std::to_string(node->get_id()) << "\n";
+    gds << "SNAME " << cell->get_refer() << std::to_string(node->get_vcg_id()) << "\n";
     gds << "XY " << std::to_string(cell->get_c1()._x) << ": "
         << std::to_string(cell->get_c1()._y) << "\n";  // c1 point
     gds << "ENDEL\n";
@@ -1042,6 +1050,7 @@ void PatternTree::debug_GDS(PickHelper* helper) {
     _vcg->do_pick_cell(item->_vcg_id, cell);
   }
   _vcg->gen_GDS();
+  _vcg->undo_all_picks();
 }
 
 /**
@@ -1094,10 +1103,10 @@ int PatternTree::get_cells_area(PickHelper* helper) {
   return area;
 }
 
-void right_adjust_left(PickHelper* new_helper /*out*/,
-                       size_t left_item_num /*in*/,
-                       size_t right_item_num /*in*/) {
-  
+void VCG::undo_all_picks() {
+  for (auto node : _adj_list) {
+    undo_pick_cell(node->get_vcg_id());
+  }
 }
 
 }  // namespace  EDA_CHALLENGE_Q4
