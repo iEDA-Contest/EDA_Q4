@@ -107,6 +107,7 @@ void Flow::doTaskFloorplan() {
     // // !!!!! <<<<< floorplan !!!!!
     // g.gen_GDS();
     ++g._gds_file_num;
+    g.gen_result();
     _parser->reset_tokens();
 
     g_log <<" << end\n";

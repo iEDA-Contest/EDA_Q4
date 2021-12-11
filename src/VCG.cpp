@@ -6,7 +6,7 @@
 namespace EDA_CHALLENGE_Q4 {
 
 size_t VCG::_gds_file_num = 0;
-static constexpr size_t max_combination = 10;
+static constexpr size_t max_combination = 100;
 
 VCG::VCG(Token_List& tokens) 
   : _cm(nullptr), _cst(nullptr), _helper(nullptr) {
@@ -243,17 +243,19 @@ void VCG::find_best_place() {
   ASSERT(root, "Root of Pattern Tree missing");
   auto root_picks = root->get_picks();
   ASSERT(root_picks.size(), "No Picks in root node");
-  auto best = root_picks[0];
+  auto best = root_picks[root_picks.size() - 1];
   set_cells_by_helper(best);
 
-  //
-  _tree->get_biggest_column(3);
+  // test
+  // _tree->get_biggest_column(3);
 
   // debug
   // for (auto helper : root_picks) {
   //   undo_all_picks();
   //   set_cells_by_helper(helper);
-  //   gen_GDS();
+    gen_GDS();
+    
+  //   debug_picks();
   // }
 }
 
@@ -761,7 +763,7 @@ void PatternTree::merge_hrz(PTNode* pt_node) {
       get_box_range_fit_litems(r_items, l_items, lpick_new->get_box()._c3._x, range);
       int x_move = range._x;
       if (range._x > range._y) {
-        x_move = range._y;
+        x_move = range._x;
 
         g_log << "[HRZ merging violate] occur in pt_node = " 
               << std::to_string(pt_node->get_pt_id())  << ", "
@@ -1191,6 +1193,9 @@ void PatternTree::merge_vtc(PTNode* pt_node) {
     bchild->get_grid_tops(bpick_vcg_id_set);
     bpick_new->get_items(bpick_vcg_id_set, b_items);
 
+    // debug
+    // debug_GDS(bpick_new);
+
     for (auto tpick : tchild->get_picks()) {
       if (is_pick_repeat(bpick_new, tpick)) continue;
 
@@ -1208,11 +1213,12 @@ void PatternTree::merge_vtc(PTNode* pt_node) {
       tchild->get_grid_bottoms(tpick_vcg_id_set);
       tpick_new->get_items(tpick_vcg_id_set, t_items);
 
+
       Point range;
       get_box_range_fit_bitems(t_items, b_items, bpick_new->get_box()._c3._y, range);
       int y_move = range._x;
       if (range._x > range._y) {
-        y_move = range._y;
+        y_move = range._x;
 
         g_log << "[VTC merging violate] occur in pt_node = " 
               << std::to_string(pt_node->get_pt_id()) << ", "
@@ -1327,6 +1333,19 @@ int PatternTree::get_pt_id(uint8_t vcg_id) {
   }
 
   return -1;
+}
+
+void VCG::debug_picks() {
+  g_log << "Picks:\n";
+  for (auto node : _adj_list) {
+    auto cell = node->get_cell();
+    if (cell == nullptr) continue;
+
+    g_log << "nodeid = " << std::to_string(node->get_vcg_id()) 
+          << ", cell_id = " << cell->get_cell_id() << "\n";
+    g_log.flush();
+  }
+  g_log << "----------\n";
 }
 
 }  // namespace  EDA_CHALLENGE_Q4

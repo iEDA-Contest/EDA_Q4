@@ -297,6 +297,7 @@ class VCG {
   void get_cst_y(uint8_t, Point&);
   void get_cst_y(uint8_t, uint8_t, Point&);
   void set_cells_by_helper(PickHelper*);
+  void debug_picks();
  
   // members
   std::vector<VCGNode*> _adj_list;  // Node0 is end, final Node is start
