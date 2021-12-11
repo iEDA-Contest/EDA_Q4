@@ -157,6 +157,7 @@ class PatternTree {
   void get_helper_box(PickHelper*, Rectangle&);
   int get_cells_area(PickHelper*);
   void set_cell_status(Cell*, PickItem*);
+  void right_adjust_left(PickHelper*, size_t, size_t);
 
   // members
   std::map<int, PTNode*> _node_map;     // pt_id->pt_node
@@ -891,7 +892,7 @@ inline bool CmpPickHelperDeath::operator()(PickHelper* p1, PickHelper* p2) {
   return p1->get_death() < p2->get_death();
 }
 
-inline void PatternTree::set_cell_status(Cell* cell, PickItem* item) {
+inline void PatternTree::set_cell_status(Cell* cell /*out*/, PickItem* item /*in*/) {
   if (cell && item && cell->get_cell_id() == item->_cell_id) {
     cell->set_x(item->_c1_x);
     cell->set_y(item->_c1_y);

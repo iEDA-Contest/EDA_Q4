@@ -667,8 +667,9 @@ void PatternTree::list_possibility(PTNode* pt_node) {
     p->set_box(0, 0, cell->get_width(), cell->get_height());
     pt_node->insert_pick(p);
     
-    cell->rotate();
+    if (cell->is_square()) continue;
 
+    cell->rotate();
     p = new PickHelper(grid_value, cell->get_cell_id(), cell->get_rotation());
     p->set_box(0, 0, cell->get_width(), cell->get_height());
     pt_node->insert_pick(p);
@@ -688,6 +689,7 @@ void PatternTree::merge_hrz(PTNode* pt_node) {
   std::vector<PickItem*> rpick_items; 
   std::priority_queue< PickHelper*, std::vector<PickHelper*>,
                       CmpPickHelperDeath> death_queue;
+  Rectangle box;
   for (auto lpick : lchild->get_picks()) {
     // interposer
     lchild->get_grid_lefts(lpick_vcg_id_set);
@@ -697,6 +699,10 @@ void PatternTree::merge_hrz(PTNode* pt_node) {
     lchild->get_grid_bottoms(lpick_vcg_id_set);
     lpick->get_items(lpick_vcg_id_set, lpick_items);
     adjust_interposer_bottom(lpick_items);
+
+    // update left box
+    get_helper_box(lpick, box);
+    lpick->set_box(box);
 
     lchild->get_grid_rights(lpick_vcg_id_set);
     lpick->get_items(lpick_vcg_id_set, lpick_items);
@@ -708,6 +714,10 @@ void PatternTree::merge_hrz(PTNode* pt_node) {
       rchild->get_grid_bottoms(rpick_vcg_id_set);
       rpick->get_items(rpick_vcg_id_set, rpick_items);
       adjust_interposer_bottom(rpick_items);
+
+      // update right box
+      get_helper_box(rpick, box);
+      rpick->set_box(box);
 
       // two pt_node 
       rchild->get_grid_lefts(rpick_vcg_id_set);
@@ -730,7 +740,6 @@ void PatternTree::merge_hrz(PTNode* pt_node) {
       }
 
       PickHelper* new_helper = new PickHelper(lpick, rpick);
-      Rectangle box;
       get_helper_box(new_helper, box);
       new_helper->set_box(box);
       int cell_area = get_cells_area(new_helper);
@@ -815,7 +824,6 @@ void PatternTree::adjust_interposer_left(std::vector<PickItem*>& left_items) {
     auto celltype = cell->get_cell_type();
     Point range;
     get_cst_x(celltype, range);
-    cell->set_x(range._x);
     item->_c1_x = range._x;
   }
 }
@@ -995,7 +1003,7 @@ void PatternTree::get_box_range_fit_litems( const std::vector<PickItem*>& r_item
     auto r_cell = _cm->get_cell(r_item->_cell_id);
     assert(r_cell);
 
-    // restore left cell's status
+    // restore right cell's status
     set_cell_status(r_cell, r_item);
 
     for (auto l_item : l_items) {
@@ -1036,6 +1044,10 @@ void PatternTree::debug_GDS(PickHelper* helper) {
   _vcg->gen_GDS();
 }
 
+/**
+ *  @param helper 
+ *  @param box    box will be reset, and then form bounding box of helper
+ */
 void PatternTree::get_helper_box( PickHelper* helper /*in*/, 
                                   Rectangle& box /*out*/) {
   if (!helper) return;
@@ -1045,12 +1057,8 @@ void PatternTree::get_helper_box( PickHelper* helper /*in*/,
   auto items = helper->get_items();
   ASSERT(items.size(), "No PickItem");
   auto item0 = items[0];
-  auto cell0 = _cm->get_cell(item0->_cell_id);
-  if (cell0 == nullptr) {
-    g_log << "cell_id = " << item0->_cell_id << "missing\n";
-  }
-  box._c1._x = cell0->get_x();
-  box._c1._y = cell0->get_y();
+  box._c1._x = item0->_c1_x;
+  box._c1._y = item0->_c1_y;
 
   // later
   for (auto item : items) {
@@ -1084,6 +1092,12 @@ int PatternTree::get_cells_area(PickHelper* helper) {
   }
 
   return area;
+}
+
+void right_adjust_left(PickHelper* new_helper /*out*/,
+                       size_t left_item_num /*in*/,
+                       size_t right_item_num /*in*/) {
+  
 }
 
 }  // namespace  EDA_CHALLENGE_Q4
