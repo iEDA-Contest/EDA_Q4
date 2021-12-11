@@ -37,12 +37,14 @@ class PickHelper {
   // constructor
   PickHelper(uint8_t, int, bool);
   PickHelper(PickHelper*, PickHelper*);
+  PickHelper(PickHelper*);
   ~PickHelper();
 
   // getter
   auto get_items() const { return _items; }
   auto get_box() const { return _box; }
   auto get_death() const { return _death; }
+  auto get_items_num() const { return _items.size(); }
 
   // setter
   void set_box(const Rectangle& r) { _box = r; }
@@ -157,7 +159,6 @@ class PatternTree {
   void get_helper_box(PickHelper*, Rectangle&);
   int get_cells_area(PickHelper*);
   void set_cell_status(Cell*, PickItem*);
-  void right_adjust_left(PickHelper*, size_t, size_t);
 
   // members
   std::map<int, PTNode*> _node_map;     // pt_id->pt_node
@@ -175,7 +176,7 @@ class VCGNode {
   ~VCGNode();
 
   // getter
-  auto get_id() const { return _vcg_id; }
+  auto get_vcg_id() const { return _vcg_id; }
   auto get_type() const { return _type; }
   auto get_v_placeholder() const { return _v_placeholder; }
   auto get_h_placeholder() const { return _h_placeholder; }
@@ -251,6 +252,7 @@ class VCG {
   // function
   void do_pick_cell(uint8_t, Cell*);
   void undo_pick_cell(uint8_t);
+  void undo_all_picks();
   bool is_id_valid(uint8_t);
   void show_topology();
   void show_froms_tos();
@@ -359,18 +361,18 @@ inline void VCGNode::insert_to(VCGNode* to) {
 }
 
 inline void VCGNode::show_froms() {
-  g_log << "froms[" << std::to_string(get_id()) << "]:";
+  g_log << "froms[" << std::to_string(get_vcg_id()) << "]:";
   for (auto from : _froms) {
-    g_log << std::to_string(from->get_id()) << ", ";
+    g_log << std::to_string(from->get_vcg_id()) << ", ";
   }
   g_log << "\n";
   g_log.flush();
 }
 
 inline void VCGNode::show_tos() {
-  g_log << "tos[" << std::to_string(get_id()) << "]:";
+  g_log << "tos[" << std::to_string(get_vcg_id()) << "]:";
   for (auto to : _tos) {
-    g_log << std::to_string(to->get_id()) << ", ";
+    g_log << std::to_string(to->get_vcg_id()) << ", ";
   }
   g_log << "\n";
   g_log.flush();
@@ -413,7 +415,7 @@ inline bool VCGNode::cmp_min_node(VCGNode* n1, VCGNode* n2) {
   if (n1 == nullptr || n2 == nullptr) {
     return false;
   } else {
-    return n1->get_id() < n2->get_id();
+    return n1->get_vcg_id() < n2->get_vcg_id();
   }
 }
 
@@ -505,7 +507,7 @@ inline void VCG::set_constraint(Constraint* c) {
 
 inline void VCG::retrieve_all_cells() {
   for (auto node : _adj_list) {
-    undo_pick_cell(node->get_id());
+    undo_pick_cell(node->get_vcg_id());
   }
 }
 
@@ -899,6 +901,16 @@ inline void PatternTree::set_cell_status(Cell* cell /*out*/, PickItem* item /*in
     if (cell->get_rotation() != item->_rotation) {
       cell->rotate();
     }
+  }
+}
+
+inline PickHelper::PickHelper(PickHelper* helper)
+  :_death(0) {
+  for (auto item : helper->get_items()) {
+    _items.push_back(new PickItem(*item));
+  }
+  for (auto item : _items) {
+    _id_item_map[item->_vcg_id] = item;
   }
 }
 
