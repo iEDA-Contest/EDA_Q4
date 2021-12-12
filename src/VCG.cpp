@@ -6,7 +6,7 @@
 namespace EDA_CHALLENGE_Q4 {
 
 size_t VCG::_gds_file_num = 0;
-static constexpr size_t max_combination = 80;
+static constexpr size_t max_combination = 10;
 
 VCG::VCG(Token_List& tokens) 
   : _cm(nullptr), _cst(nullptr), _helper(nullptr) {
@@ -741,7 +741,13 @@ void PatternTree::merge_hrz(PTNode* pt_node) {
     lpick_new->get_items(lpick_vcg_id_set, l_items);
 
     for (auto rpick : rchild->get_picks()) {
-      if (is_pick_repeat(lpick_new, rpick)) continue;
+      if (is_pick_repeat(lpick_new, rpick)) {
+        bool success = false;
+        second_pick_replace(lpick_new, rpick, success);
+        if (success == false) {
+          continue;
+        }
+      }
 
       PickHelper* rpick_new = new PickHelper(rpick);
 
@@ -1348,5 +1354,28 @@ void VCG::debug_picks() {
   g_log << "----------\n";
 }
 
+void PatternTree::second_pick_replace(PickHelper* first /*in*/, 
+                                PickHelper* second /*out*/,
+                                bool& success) {
+  if (!first || !second) return;
+
+  _vcg->set_cells_by_helper(first);
+
+  // find repeat
+  std::set<uint8_t> second_vcg_id_replace;
+  for (auto item : second->get_items()) {
+    auto cell = _cm->get_cell(item->_cell_id);
+    ASSERT(cell, "Cell Manager miss cell_id = %d", item->_cell_id);
+
+    if (cell->get_vcg_id() != 0 /*cell has been placed*/) {
+      second_vcg_id_replace.insert(item->_vcg_id);
+    }
+  }
+
+  // replace repeat
+  TODO();
+
+  _vcg->undo_all_picks();
+}
 
 }  // namespace  EDA_CHALLENGE_Q4

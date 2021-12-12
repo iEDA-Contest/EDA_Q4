@@ -169,6 +169,7 @@ class PatternTree {
   void merge_vtc(PTNode*);
   bool insert_death_que(DeathQue&, PickHelper*);
   int get_pt_id(uint8_t);
+  void second_pick_replace(PickHelper*, PickHelper*, bool&);
 
   // members
   std::map<int, PTNode*> _node_map;     // pt_id->pt_node
@@ -271,6 +272,7 @@ class VCG {
   void gen_GDS();
   void gen_result();
   void update_pitem(Cell*);
+  void set_cells_by_helper(PickHelper*);
 
   // members
   static size_t _gds_file_num;
@@ -298,7 +300,6 @@ class VCG {
   void get_cst_x(uint8_t, uint8_t, Point&);
   void get_cst_y(uint8_t, Point&);
   void get_cst_y(uint8_t, uint8_t, Point&);
-  void set_cells_by_helper(PickHelper*);
   void debug_picks();
  
   // members
