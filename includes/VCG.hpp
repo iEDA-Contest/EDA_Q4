@@ -56,6 +56,8 @@ class PickHelper {
   void get_items(const std::set<uint8_t>&, std::vector<PickItem*>&);
   PickHelper* get_pt_node_helper(uint8_t, int);
   void insert_source(PickHelper*);
+  bool is_picked(int);
+  void reset_pos();
 
  private:
   // members
@@ -169,7 +171,11 @@ class PatternTree {
   void merge_vtc(PTNode*);
   bool insert_death_que(DeathQue&, PickHelper*);
   int get_pt_id(uint8_t);
-  void second_pick_replace(PickHelper*, PickHelper*, bool&);
+  void second_pick_replace(PickHelper*, PickHelper*);
+  void replace(PickHelper*);
+  void get_from_vcg_ids(uint8_t, std::set<uint8_t>&);
+  bool is_pick_same(PickHelper*, PickHelper*);
+  void second_pick_replace(PTNode*, PTNode*, DeathQue&);
 
   // members
   std::map<int, PTNode*> _node_map;     // pt_id->pt_node
@@ -254,7 +260,7 @@ class VCG {
   Cell* get_cell(uint8_t);
   CellType get_cell_type(uint8_t);
   VCGNodeType get_node_type(uint8_t);
-  CellPriority get_priority(VCGNodeType);
+  CellPriority get_priority(uint8_t);
 
   // setter
   void set_cell_man(CellManager*);
@@ -463,8 +469,8 @@ inline VCGNode* VCG::get_node(uint8_t id) {
   return id < _adj_list.size() ? _adj_list[id] : nullptr;
 }
 
-inline CellType VCG::get_cell_type(uint8_t id) {
-  VCGNode* p = get_node(id);
+inline CellType VCG::get_cell_type(uint8_t vcg_id) {
+  VCGNode* p = get_node(vcg_id);
   if (p) {
     switch (p->get_type()) {
       case kVCG_MEM:
@@ -932,6 +938,38 @@ inline PickHelper::PickHelper(PickHelper* helper)
 
 inline PTNode* PatternTree::get_pt_node(int pt_id) {
   return _node_map.count(pt_id) ? _node_map[pt_id] : nullptr;
+}
+
+inline CellPriority VCG::get_priority(uint8_t vcg_id) {
+  auto node = get_node(vcg_id);
+  if (node) {
+
+    switch (node->get_type()) {
+      case kVCG_MEM: return kPrioMem;
+      case kVCG_SOC: return kPrioSoc;
+      default: break;
+    }
+    
+  } 
+
+  return kPrioNull;
+}
+
+inline bool PickHelper::is_picked(int cell_id) {
+  for (auto item : _items) {
+    if (item->_cell_id == cell_id) {
+      return true;
+    }
+  }
+
+  return false;
+}
+
+inline void PickHelper::reset_pos() {
+  for (auto item : _items) {
+    item->_c1_x = 0;
+    item->_c1_y = 0;
+  }
 }
 
 }  // namespace EDA_CHALLENGE_Q4
