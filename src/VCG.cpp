@@ -6,7 +6,7 @@
 namespace EDA_CHALLENGE_Q4 {
 
 size_t VCG::_gds_file_num = 0;
-static constexpr size_t max_combination = 100;
+static constexpr size_t max_combination = 80;
 
 VCG::VCG(Token_List& tokens) 
   : _cm(nullptr), _cst(nullptr), _helper(nullptr) {
@@ -238,7 +238,7 @@ void VCG::fill_id_grid() {
 
 void VCG::find_best_place() {
   traverse_tree();
-  // root first
+  // root
   auto root = _tree->get_pt_node(0);
   ASSERT(root, "Root of Pattern Tree missing");
   auto root_picks = root->get_picks();
@@ -246,14 +246,11 @@ void VCG::find_best_place() {
   auto best = root_picks[root_picks.size() - 1];
   set_cells_by_helper(best);
 
-  // test
-  // _tree->get_biggest_column(3);
-
   // debug
   // for (auto helper : root_picks) {
   //   undo_all_picks();
   //   set_cells_by_helper(helper);
-    gen_GDS();
+  //   gen_GDS();
     
   //   debug_picks();
   // }
@@ -608,12 +605,13 @@ void PatternTree::get_zero_in_nodes(const GridType& grid /*in*/,
 }
 
 PatternTree::~PatternTree() {
-  _pt_grid_map.clear();
-
   for (auto& pair : _node_map) {
     delete pair.second;
   }
+  _node_map.clear();
 
+  _pt_grid_map.clear();
+  
   _cm = nullptr;  // not release here
   _cst = nullptr; // not release here
   _vcg = nullptr; // not release here
@@ -699,13 +697,15 @@ void PatternTree::list_possibility(PTNode* pt_node) {
   for (auto cell : cells) {
     p = new PickHelper(grid_value, cell->get_cell_id(), cell->get_rotation());
     p->set_box(0, 0, cell->get_width(), cell->get_height());
+    p->set_pt_id(pt_node->get_pt_id());
     pt_node->insert_pick(p);
     
     if (cell->is_square()) continue;
-
     cell->rotate();
+
     p = new PickHelper(grid_value, cell->get_cell_id(), cell->get_rotation());
     p->set_box(0, 0, cell->get_width(), cell->get_height());
+    p->set_pt_id(pt_node->get_pt_id());
     pt_node->insert_pick(p);
   }
 }
@@ -725,6 +725,7 @@ void PatternTree::merge_hrz(PTNode* pt_node) {
   Rectangle box;
   for (auto lpick : lchild->get_picks()) {
     PickHelper* lpick_new = new PickHelper(lpick);
+    lpick_new->set_pt_id(lchild->get_pt_id());
 
     // interposer
     lchild->get_grid_lefts(lpick_vcg_id_set);
@@ -746,6 +747,8 @@ void PatternTree::merge_hrz(PTNode* pt_node) {
       if (is_pick_repeat(lpick_new, rpick)) continue;
 
       PickHelper* rpick_new = new PickHelper(rpick);
+      rpick_new->set_pt_id(rchild->get_pt_id());
+
       // interposer
       rchild->get_grid_bottoms(rpick_vcg_id_set);
       rpick_new->get_items(rpick_vcg_id_set, r_items);
@@ -776,7 +779,9 @@ void PatternTree::merge_hrz(PTNode* pt_node) {
       }
 
       PickHelper* new_helper = new PickHelper(lpick_new, rpick_new);
-      
+      new_helper->insert_source(lpick);
+      new_helper->insert_source(rpick);
+
       get_helper_box(new_helper, box);
       new_helper->set_box(box);
       int cell_area = get_cells_area(new_helper);
@@ -799,6 +804,7 @@ void PatternTree::merge_hrz(PTNode* pt_node) {
   while (death_queue.size()) {
     auto pick = death_queue.top();
     death_queue.pop();
+    pick->set_pt_id(pt_node->get_pt_id());
     pt_node->insert_pick(pick);
 
     // debug
@@ -813,7 +819,7 @@ void PatternTree::merge_hrz(PTNode* pt_node) {
  * @param second  cells chosen later
  */
 PickHelper::PickHelper(PickHelper* first, PickHelper* second)
-  :_death(0) {
+  :_death(0), _pt_id(-1) {
   ASSERT(first && second, "Please enter valid data");
 
   for (auto item : first->get_items()) {
@@ -1200,6 +1206,7 @@ void PatternTree::merge_vtc(PTNode* pt_node) {
       if (is_pick_repeat(bpick_new, tpick)) continue;
 
       PickHelper* tpick_new = new PickHelper(tpick);
+
       // interposer
       tchild->get_grid_lefts(tpick_vcg_id_set);
       tpick_new->get_items(tpick_vcg_id_set, t_items);
@@ -1231,6 +1238,8 @@ void PatternTree::merge_vtc(PTNode* pt_node) {
       }
 
       PickHelper* new_helper = new PickHelper(bpick_new, tpick_new);
+      new_helper->insert_source(bpick);
+      new_helper->insert_source(tpick);
 
       get_helper_box(new_helper, box);
       new_helper->set_box(box);
@@ -1254,6 +1263,7 @@ void PatternTree::merge_vtc(PTNode* pt_node) {
   while (death_queue.size()) {
     auto pick = death_queue.top();
     death_queue.pop();
+    pick->set_pt_id(pt_node->get_pt_id());
     pt_node->insert_pick(pick);
 
     // debug
@@ -1310,9 +1320,9 @@ void VCG::update_pitem(Cell* cell) {
 
 PTNode* PatternTree::get_biggest_column(uint8_t vcg_id) {
   auto pt_id = get_pt_id(vcg_id);
-  ASSERT(pt_id >= 0, "No pt_node contains vcg_id = %d", vcg_id);
+  ASSERT(pt_id >= 0, "No leaves-pt_node contains vcg_id = %d", vcg_id);
   auto pt_node = get_pt_node(pt_id);
-  ASSERT(pt_node, "No pt_node whose pt_id = %d", pt_id);
+  ASSERT(pt_node, "No leaves-pt_node whose pt_id = %d", pt_id);
 
   PTNode* parent = pt_node->get_parent();
   while (  parent
@@ -1346,6 +1356,51 @@ void VCG::debug_picks() {
     g_log.flush();
   }
   g_log << "----------\n";
+}
+
+/**
+ * @brief  
+ * 
+ * @param vcg_id  confirm a exact PickItem
+ * @param pt_id   target pt_id which contains returned helper
+ * @return PickHelper* 
+ */
+PickHelper* PickHelper::get_pt_node_helper(uint8_t vcg_id, int pt_id) {
+
+  PickHelper* helper = this;
+  ASSERT(_id_item_map.count(vcg_id), 
+          "pt_node, whose pt_id = %d, does not contain vcg_id = %d",
+                             get_pt_id(),                   vcg_id);
+  PickItem* to_find_item = _id_item_map[vcg_id];
+  while (to_find_item) {
+    to_find_item = nullptr;
+
+    for (auto src_helper : helper->get_sources()) {
+      to_find_item = src_helper->get_item(vcg_id);
+      if (to_find_item) {
+        helper = src_helper;
+        break;
+      }
+    }
+
+    if (helper->get_pt_id() == pt_id) {
+      break;
+    }
+  } 
+
+  return helper->get_pt_id() == pt_id ? helper : this;
+}
+
+/**
+ * @brief 
+ * 
+ * @param vcg_id 
+ * @return PickHelper* the (non-root-)helper is part of current root-helper
+ */
+PickHelper* VCG::get_biggest_column_helper(uint8_t vcg_id) {
+  auto end_pt_node = _tree->get_biggest_column(vcg_id);
+  auto helper = _helper->get_pt_node_helper(vcg_id, end_pt_node->get_pt_id());
+  return helper;
 }
 
 }  // namespace  EDA_CHALLENGE_Q4
