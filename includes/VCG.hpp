@@ -283,7 +283,7 @@ class VCG {
   void get_cst_y(uint8_t, Point&);
   void get_cst_y(uint8_t, uint8_t, Point&);
 
-  void set_cells_by_helper(PickHelper* helper);
+  // void set_cells_by_helper(PickHelper* helper);
 
   // getter
   auto get_vertex_num() const { return _adj_list.size(); }
@@ -332,17 +332,14 @@ class VCG {
   void init_column_row_index();
   void debug();
   void get_interposer_c3(int[4]);
-<<<<<<< HEAD
-=======
-  void get_cst_x(uint8_t, Point&);
-  void get_cst_x(uint8_t, uint8_t, Point&);
-  void get_cst_y(uint8_t, Point&);
-  void get_cst_y(uint8_t, uint8_t, Point&);
+  // void get_cst_x(uint8_t, Point&);
+  // void get_cst_x(uint8_t, uint8_t, Point&);
+  // void get_cst_y(uint8_t, Point&);
+  // void get_cst_y(uint8_t, uint8_t, Point&);
   void set_cells_by_helper(PickHelper*);
   void debug_picks();
   PickHelper* get_biggest_column_helper(uint8_t);
- 
->>>>>>> 15cd75f604a3699d34d18b024d794e3f45ec1430
+
   // members
   std::vector<VCGNode*> _adj_list;  // Node0 is end, final Node is start
   GridType _id_grid;                // pattern matrix [column][row]

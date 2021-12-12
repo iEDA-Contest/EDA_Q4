@@ -245,11 +245,13 @@ void VCG::find_best_place() {
   auto best = root_picks[root_picks.size() - 1];
   set_cells_by_helper(best);
 
+  // get_biggest_column_helper(4);
+
   // debug
   // for (auto helper : root_picks) {
   //   undo_all_picks();
   //   set_cells_by_helper(helper);
-  //   gen_GDS();
+  // gen_GDS();
 
   //   debug_picks();
   // }
@@ -779,11 +781,8 @@ void PatternTree::merge_hrz(PTNode* pt_node) {
       }
 
       PickHelper* new_helper = new PickHelper(lpick_new, rpick_new);
-<<<<<<< HEAD
-=======
       new_helper->insert_source(lpick);
       new_helper->insert_source(rpick);
->>>>>>> 15cd75f604a3699d34d18b024d794e3f45ec1430
 
       get_helper_box(new_helper, box);
       new_helper->set_box(box);

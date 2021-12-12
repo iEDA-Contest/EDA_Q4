@@ -1,7 +1,7 @@
 /*
  * @Author: sjchanson
  * @Date: 2021-12-10 21:01:02
- * @LastEditTime: 2021-12-11 21:09:11
+ * @LastEditTime: 2021-12-12 15:10:16
  * @LastEditors: Please set LastEditors
  * @Description: 打开koroFileHeader查看配置 进行设置:
  * https://github.com/OBKoro1/koro1FileHeader/wiki/%E9%85%8D%E7%BD%AE
@@ -12,6 +12,7 @@
 #define CELL_MOVEMENT_CHECK
 
 #include <map>
+#include <stack>
 #include <vector>
 
 #include "LegalizationCheck.h"
@@ -45,12 +46,16 @@ class CellMovement {
   VCG* _vcg;
   LegalizationCheck* _checker;
 
+  void cellMovementByDFS(std::stack<VCGNode*>& vertex_stack);
+
   void recursiveMoveLeftCells(VCGNode* node);
   void moveCurrentCellToLegalLocation(VCGNode* node);
   VertexesXConstraint obtainVertexesXConstraint(VCGNode* left_node,
                                                 VCGNode* right_node);
   bool checkLegalAndMoveCell(std::vector<VCGNode*> left_vertexes,
                              VCGNode* current_vertex);
+  void moveLeftVertexX(VCGNode* left_node, VCGNode* right_node);
+  void moveDownVertexY(VCGNode* down_node, VCGNode* up_node);
 };
 
 inline CellMovement::CellMovement(VCG* vcg) : _vcg(vcg) {
