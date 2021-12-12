@@ -3,6 +3,8 @@ set(THIS EDA_CHALLENGE_Q4)
 project (${THIS})
 include_directories(includes)
 aux_source_directory(./src CPPSRC)
+aux_source_directory(./legalization CPPSRC)
+
 add_executable(${THIS}.out ${CPPSRC})
 
 if (debug STREQUAL "1")

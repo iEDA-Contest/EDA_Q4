@@ -52,29 +52,26 @@ class PickHelper {
   auto get_box() const { return _box; }
   auto get_death() const { return _death; }
   auto get_items_num() const { return _items.size(); }
-  auto get_pt_id() const { return _pt_id; }
-  auto get_sources() const { return _sources; }
 
   // setter
   void set_box(const Rectangle& r) { _box = r; }
   void set_box(int, int, int, int);
   void set_death(float d) { _death = d; }
-  void set_pt_id(int pt_id) { _pt_id = pt_id; }
 
   // function
   PickItem* get_item(uint8_t);
   void get_items(const std::set<uint8_t>&, std::vector<PickItem*>&);
   PickHelper* get_pt_node_helper(uint8_t, int);
   void insert_source(PickHelper*);
+  bool is_picked(int);
+  void reset_pos();
 
  private:
   // members
   std::vector<PickItem*> _items;
   std::map<uint8_t, PickItem*> _id_item_map;  // vcg_id->item
-  std::vector<PickHelper*> _sources;
   Rectangle _box;
   float _death;
-  int _pt_id;
 };
 
 struct CmpPickHelperDeath {
@@ -191,6 +188,11 @@ class PatternTree {
   void merge_vtc(PTNode*);
   bool insert_death_que(DeathQue&, PickHelper*);
   int get_pt_id(uint8_t);
+  void second_pick_replace(PickHelper*, PickHelper*);
+  void replace(PickHelper*);
+  void get_from_vcg_ids(uint8_t, std::set<uint8_t>&);
+  bool is_pick_same(PickHelper*, PickHelper*);
+  void second_pick_replace(PTNode*, PTNode*, DeathQue&);
 
   // members
   std::map<int, PTNode*> _node_map;     // pt_id->pt_node
@@ -291,7 +293,7 @@ class VCG {
   Cell* get_cell(uint8_t);
   CellType get_cell_type(uint8_t);
   VCGNodeType get_node_type(uint8_t);
-  CellPriority get_priority(VCGNodeType);
+  CellPriority get_priority(uint8_t);
 
   // setter
   void set_cell_man(CellManager*);
@@ -309,6 +311,7 @@ class VCG {
   void gen_GDS();
   void gen_result();
   void update_pitem(Cell*);
+  void set_cells_by_helper(PickHelper*);
 
   // members
   static size_t _gds_file_num;
@@ -336,9 +339,7 @@ class VCG {
   // void get_cst_x(uint8_t, uint8_t, Point&);
   // void get_cst_y(uint8_t, Point&);
   // void get_cst_y(uint8_t, uint8_t, Point&);
-  void set_cells_by_helper(PickHelper*);
   void debug_picks();
-  PickHelper* get_biggest_column_helper(uint8_t);
 
   // members
   std::vector<VCGNode*> _adj_list;  // Node0 is end, final Node is start
@@ -499,8 +500,8 @@ inline VCGNode* VCG::get_node(uint8_t id) {
   return id < _adj_list.size() ? _adj_list[id] : nullptr;
 }
 
-inline CellType VCG::get_cell_type(uint8_t id) {
-  VCGNode* p = get_node(id);
+inline CellType VCG::get_cell_type(uint8_t vcg_id) {
+  VCGNode* p = get_node(vcg_id);
   if (p) {
     switch (p->get_type()) {
       case kVCG_MEM:
@@ -702,7 +703,7 @@ inline void PatternTree::set_vcg(VCG* vcg) {
 }
 
 inline PickHelper::PickHelper(uint8_t grid_value, int cell_id, bool rotation)
-    : _death(0), _pt_id(-1) {
+    : _death(0) {
   auto p = new PickItem(grid_value, cell_id, rotation, 0, 0);
   _items.push_back(p);
   _id_item_map[grid_value] = p;
@@ -743,7 +744,6 @@ inline PickHelper::~PickHelper() {
   _items.clear();
 
   _id_item_map.clear();
-  _sources.clear();
 }
 
 inline PickItem::PickItem(const PickItem& p)
@@ -978,7 +978,7 @@ inline void PatternTree::set_cell_status(Cell* cell /*out*/,
   }
 }
 
-inline PickHelper::PickHelper(PickHelper* helper) : _death(0), _pt_id(-1) {
+inline PickHelper::PickHelper(PickHelper* helper) : _death(0) {
   for (auto item : helper->get_items()) {
     _items.push_back(new PickItem(*item));
   }
@@ -991,14 +991,36 @@ inline PTNode* PatternTree::get_pt_node(int pt_id) {
   return _node_map.count(pt_id) ? _node_map[pt_id] : nullptr;
 }
 
-/**
- * @brief Please insert by TOPOLOGICAL order!
- *
- * @param helper
- */
-inline void PickHelper::insert_source(PickHelper* helper) {
-  if (helper) {
-    _sources.push_back(helper);
+inline CellPriority VCG::get_priority(uint8_t vcg_id) {
+  auto node = get_node(vcg_id);
+  if (node) {
+    switch (node->get_type()) {
+      case kVCG_MEM:
+        return kPrioMem;
+      case kVCG_SOC:
+        return kPrioSoc;
+      default:
+        break;
+    }
+  }
+
+  return kPrioNull;
+}
+
+inline bool PickHelper::is_picked(int cell_id) {
+  for (auto item : _items) {
+    if (item->_cell_id == cell_id) {
+      return true;
+    }
+  }
+
+  return false;
+}
+
+inline void PickHelper::reset_pos() {
+  for (auto item : _items) {
+    item->_c1_x = 0;
+    item->_c1_y = 0;
   }
 }
 

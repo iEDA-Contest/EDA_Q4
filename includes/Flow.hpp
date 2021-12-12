@@ -1,6 +1,16 @@
+/*
+ * @Author: your name
+ * @Date: 2021-12-10 20:49:16
+ * @LastEditTime: 2021-12-12 16:22:39
+ * @LastEditors: your name
+ * @Description: 打开koroFileHeader查看配置 进行设置:
+ * https://github.com/OBKoro1/koro1FileHeader/wiki/%E9%85%8D%E7%BD%AE
+ * @FilePath: /EDA_Q4/includes/Flow.hpp
+ */
 #ifndef __FLOW_HPP_
 #define __FLOW_HPP_
 
+#include "../legalization/CellMovement.h"
 #include "CellManager.hpp"
 #include "ConfigManager.hpp"
 #include "ConstraintManager.hpp"
@@ -75,7 +85,7 @@ inline Flow& Flow::getInstance(const int argc, char** argv) {
   singleton.set_argv(argv);
 
   log_init();
-  
+
   return singleton;
 }
 

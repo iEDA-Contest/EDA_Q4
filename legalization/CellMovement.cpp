@@ -1,7 +1,7 @@
 /*
  * @Author: sjchanson
  * @Date: 2021-12-10 21:01:11
- * @LastEditTime: 2021-12-12 16:08:12
+ * @LastEditTime: 2021-12-12 17:57:54
  * @LastEditors: Please set LastEditors
  * @Description: 打开koroFileHeader查看配置 进行设置:
  * https://github.com/OBKoro1/koro1FileHeader/wiki/%E9%85%8D%E7%BD%AE
@@ -20,8 +20,21 @@ namespace EDA_CHALLENGE_Q4 {
 void CellMovement::executeCellMovement() {
   std::stack<VCGNode*> vertex_stack;
 
-  vertex_stack.push(_vcg->get_node(_vcg->get_vertex_num() - 1));
-  cellMovementByDFS(vertex_stack);
+  auto start = _vcg->get_node(_vcg->get_vertex_num() - 1);
+
+  auto next_vertexes = start->get_tos();
+
+  // make sure the vertexes is ordinal.
+  std::map<int, VCGNode*> ordinal_vertexes;
+  for (auto next_vertex : next_vertexes) {
+    ordinal_vertexes.emplace(next_vertex->get_vcg_id(), next_vertex);
+  }
+
+  for (auto pair : ordinal_vertexes) {
+    auto vertex = pair.second;
+    vertex_stack.push(vertex);
+    cellMovementByDFS(vertex_stack);
+  }
 
   // auto start_vertex = *(_vcg->get_vcg_nodes().rbegin());
   // auto end_vertex = *(_vcg->get_vcg_nodes().begin());
@@ -146,7 +159,9 @@ void CellMovement::cellMovementByDFS(std::stack<VCGNode*>& vertex_stack) {
     }
   }
 
-  auto next_vertexes = current_vertex->get_froms();
+  _vcg->gen_GDS();
+
+  auto next_vertexes = current_vertex->get_tos();
   // make sure the vertexes is ordinal.
   std::map<int, VCGNode*> ordinal_vertexes;
   for (auto next_vertex : next_vertexes) {
@@ -268,6 +283,30 @@ void CellMovement::moveLeftVertexX(VCGNode* left_node, VCGNode* right_node) {
   _checker->updateVertexXCoord(left_node, right_min);
 
   _checker->set_left_x_range(right_node, Point(0, right_min - left_max));
+}
+
+void CellMovement::moveDownVertexY(VCGNode* down_node, VCGNode* up_node) {
+  auto movable_range = _checker->obtainDownVertexYMovableRange(down_node);
+  auto constraint_range =
+      _checker->obtainUpVertexYConstraintRange(down_node, up_node);
+
+  int left_max = INT_MIN;
+  int right_min = INT_MAX;
+
+  movable_range._x > left_max ? left_max = movable_range._x : left_max;
+  constraint_range._x > left_max ? left_max = constraint_range._x : left_max;
+
+  movable_range._y < right_min ? right_min = movable_range._y : right_min;
+  constraint_range._y < right_min ? right_min = constraint_range._y : right_min;
+
+  if (right_min < left_max) {
+    std::cout << "Error In Range : moveLeftVertexX" << std::endl;
+    exit(1);
+  }
+
+  _checker->updateVertexXCoord(down_node, right_min);
+
+  _checker->set_left_x_range(up_node, Point(0, right_min - left_max));
 }
 
 }  // namespace EDA_CHALLENGE_Q4

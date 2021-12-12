@@ -1,7 +1,7 @@
 /*
  * @Author: your name
  * @Date: 2021-12-10 21:00:11
- * @LastEditTime: 2021-12-12 16:04:15
+ * @LastEditTime: 2021-12-12 16:45:10
  * @LastEditors: Please set LastEditors
  * @Description: 打开koroFileHeader查看配置 进行设置:
  * https://github.com/OBKoro1/koro1FileHeader/wiki/%E9%85%8D%E7%BD%AE
@@ -319,8 +319,8 @@ Point LegalizationCheck::obtainTopDownVertexesXRange(VCGNode* vertex) {
   int left_max = INT_MIN;
   int right_min = INT_MAX;
 
-  std::vector<VCGNode*> one_hop_childs = vertex->get_tos();
-  std::vector<VCGNode*> one_hop_parent = vertex->get_froms();
+  std::vector<VCGNode*> one_hop_childs = vertex->get_froms();
+  std::vector<VCGNode*> one_hop_parent = vertex->get_tos();
 
   for (auto child : one_hop_childs) {
     auto child_cell = child->get_cell();
@@ -486,7 +486,7 @@ int LegalizationCheck::obtainBoundaryRightXCoord(VCGNode* left_node,
   VCGNode* right_current_from_node = right_node;
   while (right_current_from_node->get_cell()) {
     // pick the left side froms.
-    auto next_vertexes = right_current_from_node->get_froms();
+    auto next_vertexes = right_current_from_node->get_tos();
     // make sure the vertexes is ordinal.
     std::map<int, VCGNode*> ordinal_vertexes;
     for (auto next_vertex : next_vertexes) {
@@ -500,7 +500,7 @@ int LegalizationCheck::obtainBoundaryRightXCoord(VCGNode* left_node,
   VCGNode* right_current_to_node = right_node;
   while (right_current_to_node->get_cell()) {
     // pick the left side froms.
-    auto next_vertexes = right_current_to_node->get_tos();
+    auto next_vertexes = right_current_to_node->get_froms();
     // make sure the vertexes is ordinal.
     std::map<int, VCGNode*> ordinal_vertexes;
     for (auto next_vertex : next_vertexes) {
@@ -516,7 +516,7 @@ int LegalizationCheck::obtainBoundaryRightXCoord(VCGNode* left_node,
   VCGNode* left_current_from_node = left_node;
   while (left_current_from_node->get_cell()) {
     // pick the right side froms.
-    auto next_vertexes = left_current_from_node->get_froms();
+    auto next_vertexes = left_current_from_node->get_tos();
     // make sure the vertexes is ordinal.
     std::map<int, VCGNode*> ordinal_vertexes;
     for (auto next_vertex : next_vertexes) {
@@ -536,7 +536,7 @@ int LegalizationCheck::obtainBoundaryRightXCoord(VCGNode* left_node,
   VCGNode* left_current_to_node = left_node;
   while (left_current_to_node->get_cell()) {
     // pick the right side froms.
-    auto next_vertexes = left_current_to_node->get_tos();
+    auto next_vertexes = left_current_to_node->get_froms();
     // make sure the vertexes is ordinal.
     std::map<int, VCGNode*> ordinal_vertexes;
     for (auto next_vertex : next_vertexes) {

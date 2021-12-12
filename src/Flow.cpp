@@ -34,11 +34,10 @@ void Flow::doStepTask() {
 }
 
 void Flow::doTaskParseArgv() {
-  const struct option table[] = {
-      {"cfg", required_argument, nullptr, 'f'},
-      {"cst", required_argument, nullptr, 's'},
-      {"help", no_argument, nullptr, 'h'},
-      {nullptr, 0, nullptr, 0}};
+  const struct option table[] = {{"cfg", required_argument, nullptr, 'f'},
+                                 {"cst", required_argument, nullptr, 's'},
+                                 {"help", no_argument, nullptr, 'h'},
+                                 {nullptr, 0, nullptr, 0}};
 
   int option = 0;
   while ((option = getopt_long(_argc, _argv, "-hf:s:", table, nullptr)) != -1) {
@@ -94,7 +93,6 @@ void Flow::doTaskFloorplan() {
   // parse pattern to VCG
   _parser = new Regex(kPATTERN);
   for (auto constraint : _constraint_man->get_pattern_list()) {
-
     g_log << "\n## " << constraint->get_pattern() << " >>\n";
     g_log.flush();
 
@@ -106,11 +104,17 @@ void Flow::doTaskFloorplan() {
     g.find_best_place();
     // // !!!!! <<<<< floorplan !!!!!
     // g.gen_GDS();
-    ++g._gds_file_num;
-    g.gen_result();
+
     _parser->reset_tokens();
 
-    g_log <<" << end\n";
+    // do cell movement.
+    CellMovement* cell_move = new CellMovement(&g);
+    cell_move->executeCellMovement();
+
+    ++g._gds_file_num;
+    g.gen_result();
+
+    g_log << " << end\n";
     g_log.flush();
 
     // g.gen_result();
