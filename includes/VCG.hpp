@@ -113,6 +113,10 @@ class PTNode {
 };
 
 class PatternTree {
+  typedef std::priority_queue<PickHelper*, std::vector<PickHelper*>,
+                              CmpPickHelperDeath>
+      DeathQue;
+
  public:
   // constructor
   PatternTree(GridType&, std::map<uint8_t, VCGNodeType>&);
@@ -123,6 +127,7 @@ class PatternTree {
   bool is_interposer_bottom(uint8_t);
 
   // getter
+  PTNode* get_pt_node(int);
 
   // setter
   void set_cst(Constraint*);
@@ -135,6 +140,8 @@ class PatternTree {
   void get_cst_x(CellType, CellType, Point&);
   void get_cst_y(CellType, Point&);
   void get_cst_y(CellType, CellType, Point&);
+  void set_cell_status(Cell*, PickItem*);
+  PTNode* get_biggest_column(uint8_t);
 
  private:
   // getter
@@ -165,19 +172,22 @@ class PatternTree {
 
   void clear_queue(std::queue<GridType>&);
   void get_box_range_fit_litems(const std::vector<PickItem*>&,
-                                const std::vector<PickItem*>&, const Rectangle&,
-                                Point&);
+                                const std::vector<PickItem*>&, int, Point&);
+  void get_box_range_fit_bitems(const std::vector<PickItem*>&,
+                                const std::vector<PickItem*>&, int, Point&);
   bool is_overlap_y(Cell*, Cell*, bool);
   bool is_overlap_x(Cell*, Cell*, bool);
   bool is_overlap(int, int, int, int, bool);
   void debug_GDS(PickHelper*);
   void get_helper_box(PickHelper*, Rectangle&);
   int get_cells_area(PickHelper*);
-  void set_cell_status(Cell*, PickItem*);
+  void merge_vtc(PTNode*);
+  bool insert_death_que(DeathQue&, PickHelper*);
+  int get_pt_id(uint8_t);
 
   // members
   std::map<int, PTNode*> _node_map;     // pt_id->pt_node
-  std::map<int, uint8_t> _pt_grid_map;  // pt_id->grid_value
+  std::map<int, uint8_t> _pt_grid_map;  // pt_id->vcg_id
   CellManager* _cm;
   Constraint* _cst;
   VCG* _vcg;
@@ -257,7 +267,7 @@ class VCG {
 
   // sjc add.
   PatternTree* get_pattern_tree() const { return _tree; }
-  CellManager* get_cell_manager() const { return _cell_man; }
+  CellManager* get_cell_manager() const { return _cm; }
   std::vector<VCGNode*> get_vcg_nodes() const { return _adj_list; }
 
   // sjc change.
@@ -265,6 +275,8 @@ class VCG {
   void get_cst_x(uint8_t, uint8_t, Point&);
   void get_cst_y(uint8_t, Point&);
   void get_cst_y(uint8_t, uint8_t, Point&);
+
+  void set_cells_by_helper(PickHelper* helper);
 
   // getter
   auto get_vertex_num() const { return _adj_list.size(); }
@@ -289,6 +301,7 @@ class VCG {
   void find_best_place();
   void gen_GDS();
   void gen_result();
+  void update_pitem(Cell*);
 
   // members
   static size_t _gds_file_num;
@@ -312,13 +325,13 @@ class VCG {
   void init_column_row_index();
   void debug();
   void get_interposer_c3(int[4]);
-
   // members
   std::vector<VCGNode*> _adj_list;  // Node0 is end, final Node is start
   GridType _id_grid;                // pattern matrix [column][row]
-  CellManager* _cell_man;
+  CellManager* _cm;
   Constraint* _cst;
   PatternTree* _tree;
+  PickHelper* _helper;
 };
 
 // VCGNode
@@ -461,9 +474,9 @@ inline void VCG::set_id_grid(size_t column, size_t row, uint8_t id) {
 inline void VCG::debug() { show_topology(); }
 
 inline void VCG::set_cell_man(CellManager* cm) {
-  if (_cell_man == nullptr && cm != nullptr) {
-    _cell_man = new CellManager(*cm);
-    _tree->set_cm(_cell_man);
+  if (_cm == nullptr && cm != nullptr) {
+    _cm = new CellManager(*cm);
+    _tree->set_cm(_cm);
   }
 }
 
@@ -502,23 +515,22 @@ inline size_t VCG::get_max_row(GridType& grid) {
   return max_row;
 }
 
-inline void VCG::do_pick_cell(uint8_t id, Cell* cell) {
-  if (is_id_valid(id) && cell != nullptr &&
-      _adj_list[id]->get_cell() == nullptr) {
+inline void VCG::do_pick_cell(uint8_t vcg_id, Cell* cell) {
+  if (is_id_valid(vcg_id) && cell != nullptr &&
+      _adj_list[vcg_id]->get_cell() == nullptr) {
     //
-    cell->set_vcg_id(id);
-    _adj_list[id]->set_cell(cell);
-    _cell_man->delete_cell(get_cell_type(id), cell);
+    cell->set_vcg_id(vcg_id);
+    _adj_list[vcg_id]->set_cell(cell);
+    _cm->delete_cell(get_cell_type(vcg_id), cell);
 
     // debug
-    g_log << "nodeid = " << std::to_string(id)
-          << ", cell_id = " << cell->get_refer() << "\n";
-    g_log.flush();
+    // g_log << "nodeid = " << std::to_string(vcg_id) << ", cell_id = " <<
+    // cell->get_refer() << "\n"; g_log.flush();
   }
 }
 
-inline Cell* VCG::get_cell(uint8_t id) {
-  VCGNode* node = get_node(id);
+inline Cell* VCG::get_cell(uint8_t vcg_id) {
+  VCGNode* node = get_node(vcg_id);
   return node ? node->get_cell() : nullptr;
 }
 
@@ -956,6 +968,10 @@ inline PickHelper::PickHelper(PickHelper* helper) : _death(0) {
   for (auto item : _items) {
     _id_item_map[item->_vcg_id] = item;
   }
+}
+
+inline PTNode* PatternTree::get_pt_node(int pt_id) {
+  return _node_map.count(pt_id) ? _node_map[pt_id] : nullptr;
 }
 
 }  // namespace EDA_CHALLENGE_Q4

@@ -6,9 +6,9 @@
 namespace EDA_CHALLENGE_Q4 {
 
 size_t VCG::_gds_file_num = 0;
-static constexpr size_t max_combination = 10;
+static constexpr size_t max_combination = 100;
 
-VCG::VCG(Token_List& tokens) : _cell_man(nullptr), _cst(nullptr) {
+VCG::VCG(Token_List& tokens) : _cm(nullptr), _cst(nullptr), _helper(nullptr) {
   _adj_list.push_back(new VCGNode(kVCG_END));
   VCGNode* start = new VCGNode(kVCG_START);
 
@@ -89,14 +89,14 @@ VCG::VCG(Token_List& tokens) : _cell_man(nullptr), _cst(nullptr) {
   init_column_row_index();
   init_pattern_tree();
   // debug
-  debug();
+  // debug();
 }
 
 VCG::~VCG() {
   // before clear _cell_man, we should retrieve all cells
   retrieve_all_cells();
-  delete _cell_man;
-  _cell_man = nullptr;
+  delete _cm;
+  _cm = nullptr;
 
   for (auto p : _adj_list) {
     delete p;
@@ -111,6 +111,8 @@ VCG::~VCG() {
   _cst = nullptr;  // must not release here!
 
   delete _tree;
+
+  _helper = nullptr;  // must not release here!
 }
 
 /**
@@ -147,11 +149,11 @@ void VCG::undo_pick_cell(uint8_t id) {
   if (is_id_valid(id) && _adj_list[id]->get_cell()) {
     switch (_adj_list[id]->get_type()) {
       case kVCG_MEM:
-        _cell_man->insert_cell(kCellTypeMem, _adj_list[id]->get_cell());
+        _cm->insert_cell(kCellTypeMem, _adj_list[id]->get_cell());
         _adj_list[id]->set_cell_null();
         break;
       case kVCG_SOC:
-        _cell_man->insert_cell(kCellTypeSoc, _adj_list[id]->get_cell());
+        _cm->insert_cell(kCellTypeSoc, _adj_list[id]->get_cell());
         _adj_list[id]->set_cell_null();
         break;
 
@@ -176,7 +178,7 @@ void VCG::show_id_grid() {
   size_t max_row = get_max_row(_id_grid);
 
   for (size_t row = 0; row < max_row; ++row) {
-    g_log << "row[" << row <<"]:";
+    g_log << "row[" << row << "]:";
     for (size_t column = 0; column < _id_grid.size(); ++column) {
       if (row < _id_grid[column].size()) {
         g_log << std::to_string(_id_grid[column][row]) << ", ";
@@ -205,9 +207,9 @@ void VCG::init_column_row_index() {
       id_row_index_map[id] = std::max(row_index, id_row_index_map[id]);
     }
   }
-// except start and end
-  assert(id_column_index_map.size() == _adj_list.size() - 2
-         && id_row_index_map.size() == _adj_list.size() - 2);
+  // except start and end
+  assert(id_column_index_map.size() == _adj_list.size() - 2 &&
+         id_row_index_map.size() == _adj_list.size() - 2);
 
   for (size_t id = 1; id < _adj_list.size() - 1; ++id) {
     _adj_list[id]->set_max_column_index(id_column_index_map[id]);
@@ -226,7 +228,7 @@ void VCG::init_column_row_index() {
 }
 void VCG::fill_id_grid() {
   auto max_row = get_max_row(_id_grid);
-  for(auto& column : _id_grid) {
+  for (auto& column : _id_grid) {
     for (size_t row = column.size(); row < max_row; ++row) {
       column.push_back(column[row - 1]);
     }
@@ -235,46 +237,65 @@ void VCG::fill_id_grid() {
 
 void VCG::find_best_place() {
   traverse_tree();
+  // root first
+  auto root = _tree->get_pt_node(0);
+  ASSERT(root, "Root of Pattern Tree missing");
+  auto root_picks = root->get_picks();
+  ASSERT(root_picks.size(), "No Picks in root node");
+  auto best = root_picks[root_picks.size() - 1];
+  set_cells_by_helper(best);
+
+  // test
+  auto p = _tree->get_biggest_column(3);
+  p->get_pt_id();
+  // debug
+  // for (auto helper : root_picks) {
+  //   undo_all_picks();
+  //   set_cells_by_helper(helper);
+  // gen_GDS();
+
+  //   debug_picks();
+  // }
 }
 
-// void VCG::gen_result() {
-//   std::fstream result("../output/result.txt", std::ios::app | std::ios::out);
-//   assert(result.is_open());
+void VCG::gen_result() {
+  std::fstream result("../output/result.txt", std::ios::app | std::ios::out);
+  assert(result.is_open());
 
-//   std::string pattern = _cst->get_pattern();
-//   std::string::size_type pos = 0;
-//   const std::string sub_str = "&#60;";
-//   while ((pos = pattern.find(sub_str)) != std::string::npos) {
-//     pattern.replace(pos, sub_str.length(), "<");
-//   }
+  std::string pattern = _cst->get_pattern();
+  std::string::size_type pos = 0;
+  const std::string sub_str = "&#60;";
+  while ((pos = pattern.find(sub_str)) != std::string::npos) {
+    pattern.replace(pos, sub_str.length(), "<");
+  }
 
-//   if (pattern[pattern.size() - 1] == ' ') {
-//     pattern.replace(pattern.size() - 1, 1, "\0");
-//   }
-//   result << "PATTERN \"" << pattern << "\" ";
+  if (pattern[pattern.size() - 1] == ' ') {
+    pattern.replace(pattern.size() - 1, 1, "\0");
+  }
+  result << "PATTERN \"" << pattern << "\" ";
 
-//   auto box_c3 = cal_c3_of_interposer();
-//   if (box_c3[0] > box_c3[1]
-//    || box_c3[2] > box_c3[3]) {
-//      result << "NA\n";
-//   } else {
-//     result << box_c3[0] << " * " << box_c3[2] << "\n";
-//     for (auto node : _adj_list) {
-//       auto type = node->get_type();
-//       if ( type == kVCG_START || type == kVCG_END) continue;
+  int c3_arr[4];
+  get_interposer_c3(c3_arr);
+  if (c3_arr[0] > c3_arr[1] || c3_arr[2] > c3_arr[3]) {
+    result << "NA\n";
+  } else {
+    result << c3_arr[0] << " * " << c3_arr[2] << "\n";
+    for (auto node : _adj_list) {
+      auto type = node->get_type();
+      if (type == kVCG_START || type == kVCG_END) continue;
 
-//       auto cell = node->get_cell();
-//       assert(cell);
+      auto cell = node->get_cell();
+      assert(cell);
 
-//       result << cell->get_refer() << 
-//       "(" << cell->get_x() << ", " << cell->get_y() << ") " <<
-//       "R" << (cell->get_rotation() ? "90" : "0") << "\n";
-//     }
-//   } 
-//   result << "\n";
+      result << cell->get_refer() << "(" << cell->get_x() << ", "
+             << cell->get_y() << ") "
+             << "R" << (cell->get_rotation() ? "90" : "0") << "\n";
+    }
+  }
+  result << "\n";
 
-//   result.close();
-// }
+  result.close();
+}
 
 void VCG::init_pattern_tree() {
   auto map = make_id_type_map();
@@ -282,13 +303,14 @@ void VCG::init_pattern_tree() {
   _tree->set_vcg(this);
 }
 
-PatternTree::PatternTree(GridType& grid, std::map<uint8_t, VCGNodeType>& map):
-  _cm(nullptr), _cst(nullptr), _vcg(nullptr) {
+PatternTree::PatternTree(GridType& grid, std::map<uint8_t, VCGNodeType>& map)
+    : _cm(nullptr), _cst(nullptr), _vcg(nullptr) {
   slice(grid, map);
-  debug_show_pt_grid_map();
+  // debug_show_pt_grid_map();
 }
 
-void PatternTree::slice(const GridType& grid, std::map<uint8_t, VCGNodeType>& map) {
+void PatternTree::slice(const GridType& grid,
+                        std::map<uint8_t, VCGNodeType>& map) {
   std::queue<std::pair<int, GridType>> queue;
   queue.push({0, grid});
   bool vertical;
@@ -302,32 +324,32 @@ void PatternTree::slice(const GridType& grid, std::map<uint8_t, VCGNodeType>& ma
     if (smaller.size() == 1) {
       insert_leaves(pair.first, pair.second, map);
     } else {
-      auto pt_node = new PTNode(_node_map.size(),
-                                vertical ? kPTVertical : KPTHorizontal,
-                                pair.second);
+      auto pt_node =
+          new PTNode(_node_map.size(), vertical ? kPTVertical : KPTHorizontal,
+                     pair.second);
       ASSERT(_node_map.count(pt_node->get_pt_id()) == 0,
-            "Have existed pt_id = %d", pt_node->get_pt_id());
+             "Have existed pt_id = %d", pt_node->get_pt_id());
       _node_map[pt_node->get_pt_id()] = pt_node;
-      
+
       ASSERT(_node_map.count(pair.first), "Parent disappear");
       auto parent = _node_map[pair.first];
       parent->insert_child(pt_node);
       pt_node->set_parent(parent);
 
-      while(smaller.size()) {
-        queue.push({pt_node->get_pt_id() ,smaller.front()});
+      while (smaller.size()) {
+        queue.push({pt_node->get_pt_id(), smaller.front()});
         smaller.pop();
       }
 
       // debug
-      debug_create_node(pt_node);
+      // debug_create_node(pt_node);
     }
   }
 }
 
-void PatternTree::slice_module( const GridType& grid /*in*/,
-                                bool& vertical /*in*/,
-                                std::queue<GridType>& ret /*out*/) {
+void PatternTree::slice_module(const GridType& grid /*in*/,
+                               bool& vertical /*in*/,
+                               std::queue<GridType>& ret /*out*/) {
   clear_queue(ret);
 
   slice_vertical(grid, ret);
@@ -339,8 +361,8 @@ void PatternTree::slice_module( const GridType& grid /*in*/,
   }
 }
 
-void PatternTree::slice_vertical( const GridType& grid /*in*/,
-                                  std::queue<GridType>& ret /*out*/) {
+void PatternTree::slice_vertical(const GridType& grid /*in*/,
+                                 std::queue<GridType>& ret /*out*/) {
   ASSERT(grid.size() && grid[0].size(), "Grid data polluted");
   size_t max_row = grid[0].size();
 
@@ -353,9 +375,8 @@ void PatternTree::slice_vertical( const GridType& grid /*in*/,
     for (col = 0; col < grid.size() - 1; ++col) {
       size_t row;
       for (row = 0; row < max_row; ++row) {
-        ASSERT(grid[col].size() >= row + 1 
-            || grid[col + 1].size() >= row + 1,
-              "Fill grid first");
+        ASSERT(grid[col].size() >= row + 1 || grid[col + 1].size() >= row + 1,
+               "Fill grid first");
 
         if (grid[col][row] == grid[col + 1][row]) {
           break;
@@ -367,13 +388,12 @@ void PatternTree::slice_vertical( const GridType& grid /*in*/,
       }
     }
 
-    
     GridType left;
     for (size_t col_left = 0; col_left <= col; ++col_left) {
       left.push_back(grid[col_left]);
     }
     ret.push(left);
-    
+
     if (col + 1 < grid.size()) {
       GridType right;
       for (col = col + 1; col < grid.size(); ++col) {
@@ -381,7 +401,6 @@ void PatternTree::slice_vertical( const GridType& grid /*in*/,
       }
       ret.push(right);
     }
-    
 
   } else {
     // grid.size() == 1
@@ -389,8 +408,8 @@ void PatternTree::slice_vertical( const GridType& grid /*in*/,
   }
 }
 
-void PatternTree::slice_horizontal( const GridType& grid /*in*/,
-                                    std::queue<GridType>& ret /*out*/) {
+void PatternTree::slice_horizontal(const GridType& grid /*in*/,
+                                   std::queue<GridType>& ret /*out*/) {
   ASSERT(grid.size() && grid[0].size(), "Grid data polluted");
   size_t max_row = grid[0].size();
 
@@ -403,10 +422,9 @@ void PatternTree::slice_horizontal( const GridType& grid /*in*/,
     for (row = 0; row < max_row - 1; ++row) {
       size_t col;
       for (col = 0; col < grid.size(); ++col) {
-        ASSERT(grid[col].size() >= row + 1 
-              || grid[col + 1].size() >= row + 1,
-                "Fill grid first");
-        
+        ASSERT(grid[col].size() >= row + 1 || grid[col + 1].size() >= row + 1,
+               "Fill grid first");
+
         if (grid[col][row] == grid[col][row + 1]) {
           break;
         }
@@ -417,18 +435,18 @@ void PatternTree::slice_horizontal( const GridType& grid /*in*/,
       }
     }
 
-    
     GridType down;
     for (auto column : grid) {
       if (column.begin() + row + 1 < column.begin() + max_row) {
-        std::vector<uint8_t> col_vec(column.begin() + row + 1, column.begin() + max_row);
+        std::vector<uint8_t> col_vec(column.begin() + row + 1,
+                                     column.begin() + max_row);
         down.push_back(col_vec);
       }
     }
     if (down.size()) {
       ret.push(down);
     }
-    
+
     GridType top;
     for (auto column : grid) {
       if (column.begin() < column.begin() + row + 1) {
@@ -446,20 +464,20 @@ void PatternTree::slice_horizontal( const GridType& grid /*in*/,
   }
 }
 
-void PatternTree::insert_leaves( int parent_pt_id,
-                    const GridType& grid, 
-                    std::map<uint8_t, VCGNodeType>& map) {
-  std::vector<uint8_t> order; 
+void PatternTree::insert_leaves(int parent_pt_id, const GridType& grid,
+                                std::map<uint8_t, VCGNodeType>& map) {
+  std::vector<uint8_t> order;
   get_topological_sort(grid, order);
 
   if (order.size() == 1) {
-    
-    ASSERT(map.count(order[0]), "Can't find map between gird_id(%hhu) and VCGNodeType", order[0]);
-    auto pt_node = new PTNode(_node_map.size(), get_pt_type(map[order[0]]), grid);
+    ASSERT(map.count(order[0]),
+           "Can't find map between gird_id(%hhu) and VCGNodeType", order[0]);
+    auto pt_node =
+        new PTNode(_node_map.size(), get_pt_type(map[order[0]]), grid);
     ASSERT(_node_map.count(pt_node->get_pt_id()) == 0,
-          "Have existed pt_id = %d", pt_node->get_pt_id());
+           "Have existed pt_id = %d", pt_node->get_pt_id());
     _node_map[pt_node->get_pt_id()] = pt_node;
-    
+
     ASSERT(_node_map.count(parent_pt_id), "Parent disappear");
     auto parent = _node_map[parent_pt_id];
     parent->insert_child(pt_node);
@@ -470,13 +488,12 @@ void PatternTree::insert_leaves( int parent_pt_id,
     _pt_grid_map[pt_node->get_pt_id()] = order[0];
 
     // debug
-    debug_create_node(pt_node);
+    // debug_create_node(pt_node);
 
   } else {
-
     auto pt_wheel = new PTNode(_node_map.size(), kPTWheel, grid);
     ASSERT(_node_map.count(pt_wheel->get_pt_id()) == 0,
-    "Have existed pt_id = %d", pt_wheel->get_pt_id());
+           "Have existed pt_id = %d", pt_wheel->get_pt_id());
     _node_map[pt_wheel->get_pt_id()] = pt_wheel;
 
     ASSERT(_node_map.count(parent_pt_id), "Parent disappear");
@@ -485,26 +502,26 @@ void PatternTree::insert_leaves( int parent_pt_id,
     pt_wheel->set_parent(parent);
 
     // debug
-    debug_create_node(pt_wheel);
+    // debug_create_node(pt_wheel);
 
     for (auto id : order) {
-      ASSERT(map.count(id), "Can't find map between gird_id(%hhu) and VCGNodeType", id);
+      ASSERT(map.count(id),
+             "Can't find map between gird_id(%hhu) and VCGNodeType", id);
       auto pt_node = new PTNode(_node_map.size(), get_pt_type(map[id]), {{id}});
       ASSERT(_node_map.count(pt_node->get_pt_id()) == 0,
-      "Have existed pt_id = %d", pt_wheel->get_pt_id());
+             "Have existed pt_id = %d", pt_wheel->get_pt_id());
       _node_map[pt_node->get_pt_id()] = pt_node;
 
       pt_wheel->insert_child(pt_node);
       pt_node->set_parent(pt_wheel);
 
       ASSERT(_pt_grid_map.count(pt_node->get_pt_id()) == 0,
-           "_pt_grid_map data polluted");
+             "_pt_grid_map data polluted");
       _pt_grid_map[pt_node->get_pt_id()] = id;
 
       // debug
-      debug_create_node(pt_node);
+      // debug_create_node(pt_node);
     }
-
   }
 }
 
@@ -516,13 +533,13 @@ std::map<uint8_t, VCGNodeType> VCG::make_id_type_map() {
       assert(node);
       map[id] = node->get_type();
     }
-  } 
+  }
 
   return map;
 }
 
-void PatternTree::get_topological_sort( const GridType& grid /*in*/,
-                                        std::vector<uint8_t>& order /*out*/) {
+void PatternTree::get_topological_sort(const GridType& grid /*in*/,
+                                       std::vector<uint8_t>& order /*out*/) {
   order.clear();
 
   std::map<uint8_t, std::set<uint8_t>> in_edges;
@@ -542,12 +559,12 @@ void PatternTree::get_topological_sort( const GridType& grid /*in*/,
     }
     get_zero_in_nodes(grid, in_edges, zero_in);
   }
-
 }
 
-void PatternTree::get_zero_in_nodes(const GridType& grid /*in*/,
-                                    const std::map<uint8_t, std::set<uint8_t>>& in_edges /*in*/, 
-                                    std::queue<uint8_t>& zero_in /*out*/) {
+void PatternTree::get_zero_in_nodes(
+    const GridType& grid /*in*/,
+    const std::map<uint8_t, std::set<uint8_t>>& in_edges /*in*/,
+    std::queue<uint8_t>& zero_in /*out*/) {
   // store before
   std::set<uint8_t> zero_in_set;
   while (zero_in.size()) {
@@ -556,21 +573,22 @@ void PatternTree::get_zero_in_nodes(const GridType& grid /*in*/,
   }
 
   for (auto pair : in_edges) {
-    if (pair.second.size() == 0 // zero in-edge
-     && zero_in_set.count(pair.first) == 0 // not cover
-       ) {
+    if (pair.second.size() == 0                // zero in-edge
+        && zero_in_set.count(pair.first) == 0  // not cover
+    ) {
       zero_in_set.insert(pair.first);
     }
   }
 
   std::set<uint8_t> in_queue;
-  std::priority_queue<std::pair<size_t, uint8_t>, 
+  std::priority_queue<std::pair<size_t, uint8_t>,
                       std::vector<std::pair<size_t, uint8_t>>,
-                      std::greater<std::pair<size_t, uint8_t>>> min_col_2_id;
+                      std::greater<std::pair<size_t, uint8_t>>>
+      min_col_2_id;
   for (size_t col = 0; col < grid.size(); ++col) {
     for (size_t row = 0; row < grid[col].size(); ++row) {
-      if (zero_in_set.count(grid[col][row])   // zero in-edge
-       && in_queue.count(grid[col][row]) == 0 // not in queue
+      if (zero_in_set.count(grid[col][row])       // zero in-edge
+          && in_queue.count(grid[col][row]) == 0  // not in queue
       ) {
         min_col_2_id.push({col, grid[col][row]});
         in_queue.insert(grid[col][row]);
@@ -591,9 +609,9 @@ PatternTree::~PatternTree() {
     delete pair.second;
   }
 
-  _cm = nullptr;  // not release here
-  _cst = nullptr; // not release here
-  _vcg = nullptr; // not release here
+  _cm = nullptr;   // not release here
+  _cst = nullptr;  // not release here
+  _vcg = nullptr;  // not release here
 }
 
 PTNode::~PTNode() {
@@ -607,9 +625,7 @@ PTNode::~PTNode() {
   _picks.clear();
 }
 
-void VCG::traverse_tree() {
-  _tree->postorder_traverse();
-}
+void VCG::traverse_tree() { _tree->postorder_traverse(); }
 
 void PatternTree::postorder_traverse() {
   std::vector<int> preorder;
@@ -630,9 +646,9 @@ void PatternTree::postorder_traverse() {
 
   for (auto it = postorder.rbegin(); it != postorder.rend(); ++it) {
     visit_pt_node(*it);
+    // debug
     // printf("%2d, ", *it);
   }
-  
 }
 
 void PatternTree::visit_pt_node(int pt_id) {
@@ -641,12 +657,29 @@ void PatternTree::visit_pt_node(int pt_id) {
   auto pt_node = _node_map[pt_id];
   switch (pt_node->get_type()) {
     case kPTMem:
-    case kPTSoc:        list_possibility(pt_node);  break;
-    case kPTVertical:   merge_hrz(pt_node);         break;
-    case KPTHorizontal: TODO();
-    case kPTWheel:      TODO();
-    
-    default: PANIC("Unhandled pt_node type = %d", pt_node->get_type());
+    case kPTSoc:
+      list_possibility(pt_node);
+      break;
+    case kPTVertical:
+      merge_hrz(pt_node);
+      break;
+    case KPTHorizontal:
+      merge_vtc(pt_node);
+      break;
+    case kPTWheel:
+      TODO();
+
+    default:
+      PANIC("Unhandled pt_node type = %d", pt_node->get_type());
+  }
+
+  if (pt_node->get_picks().size() == 0) {
+    g_log << "No picks generate in pt_id = " << pt_node->get_pt_id() << "\n";
+  }
+
+  // debug
+  for (auto pick : pt_node->get_picks()) {
+    debug_GDS(pick);
   }
 }
 
@@ -657,8 +690,8 @@ void PatternTree::list_possibility(PTNode* pt_node) {
   get_celltype(pt_node->get_type(), c_type);
   auto cells = _cm->choose_cells(c_type);
 
-  ASSERT(_pt_grid_map.count(pt_node->get_pt_id()),
-          "no map of pt_id = %d", pt_node->get_pt_id());
+  ASSERT(_pt_grid_map.count(pt_node->get_pt_id()), "no map of pt_id = %d",
+         pt_node->get_pt_id());
   auto grid_value = _pt_grid_map[pt_node->get_pt_id()];
 
   PickHelper* p = nullptr;
@@ -666,7 +699,7 @@ void PatternTree::list_possibility(PTNode* pt_node) {
     p = new PickHelper(grid_value, cell->get_cell_id(), cell->get_rotation());
     p->set_box(0, 0, cell->get_width(), cell->get_height());
     pt_node->insert_pick(p);
-    
+
     if (cell->is_square()) continue;
 
     cell->rotate();
@@ -685,29 +718,28 @@ void PatternTree::merge_hrz(PTNode* pt_node) {
 
   std::set<uint8_t> lpick_vcg_id_set;
   std::set<uint8_t> rpick_vcg_id_set;
-  std::vector<PickItem*> lpick_items;
-  std::vector<PickItem*> rpick_items; 
-  std::priority_queue< PickHelper*, std::vector<PickHelper*>,
-                      CmpPickHelperDeath> death_queue;
+  std::vector<PickItem*> l_items;
+  std::vector<PickItem*> r_items;
+  DeathQue death_queue;
   Rectangle box;
   for (auto lpick : lchild->get_picks()) {
     PickHelper* lpick_new = new PickHelper(lpick);
 
     // interposer
     lchild->get_grid_lefts(lpick_vcg_id_set);
-    lpick_new->get_items(lpick_vcg_id_set, lpick_items);
-    adjust_interposer_left(lpick_items);
+    lpick_new->get_items(lpick_vcg_id_set, l_items);
+    adjust_interposer_left(l_items);
 
     lchild->get_grid_bottoms(lpick_vcg_id_set);
-    lpick_new->get_items(lpick_vcg_id_set, lpick_items);
-    adjust_interposer_bottom(lpick_items);
+    lpick_new->get_items(lpick_vcg_id_set, l_items);
+    adjust_interposer_bottom(l_items);
 
     // update left box
     get_helper_box(lpick_new, box);
     lpick_new->set_box(box);
 
     lchild->get_grid_rights(lpick_vcg_id_set);
-    lpick_new->get_items(lpick_vcg_id_set, lpick_items);
+    lpick_new->get_items(lpick_vcg_id_set, l_items);
 
     for (auto rpick : rchild->get_picks()) {
       if (is_pick_repeat(lpick_new, rpick)) continue;
@@ -715,65 +747,55 @@ void PatternTree::merge_hrz(PTNode* pt_node) {
       PickHelper* rpick_new = new PickHelper(rpick);
       // interposer
       rchild->get_grid_bottoms(rpick_vcg_id_set);
-      rpick_new->get_items(rpick_vcg_id_set, rpick_items);
-      adjust_interposer_bottom(rpick_items);
+      rpick_new->get_items(rpick_vcg_id_set, r_items);
+      adjust_interposer_bottom(r_items);
 
       // update right box
       get_helper_box(rpick_new, box);
       rpick_new->set_box(box);
 
-      // two pt_node 
+      // two pt_node
       rchild->get_grid_lefts(rpick_vcg_id_set);
-      rpick_new->get_items(rpick_vcg_id_set, rpick_items);
+      rpick_new->get_items(rpick_vcg_id_set, r_items);
 
       Point range;
-      get_box_range_fit_litems(rpick_items, lpick_items, lpick_new->get_box(), range);
+      get_box_range_fit_litems(r_items, l_items, lpick_new->get_box()._c3._x,
+                               range);
       int x_move = range._x;
       if (range._x > range._y) {
-        x_move = range._y;
+        x_move = range._x;
 
-        g_log << "[HRZ merging violate] occur in pt_node = " 
-              << std::to_string(pt_node->get_pt_id()) 
+        g_log << "[HRZ merging violate] occur in pt_node = "
+              << std::to_string(pt_node->get_pt_id()) << ", "
               << "range.min_x = " << range._x << ", "
               << "range.max_x = " << range._y << "\n";
       }
 
-      for (auto r_item: rpick_new->get_items()) {
+      for (auto r_item : rpick_new->get_items()) {
         r_item->_c1_x += x_move;
       }
 
       PickHelper* new_helper = new PickHelper(lpick_new, rpick_new);
-      
+
       get_helper_box(new_helper, box);
       new_helper->set_box(box);
       int cell_area = get_cells_area(new_helper);
-      new_helper->set_death(1.0 * (box.get_area() - cell_area) / box.get_area());
+      new_helper->set_death(1.0 * (box.get_area() - cell_area) /
+                            box.get_area());
 
       // debug
       // debug_GDS(new_helper);
 
-      // choose minimal death 
-      if (death_queue.size() < max_combination) {
-        death_queue.push(new_helper);
-      } else {
-
-        auto worst = death_queue.top();
-        if (worst->get_death() > new_helper->get_death()) {
-          death_queue.pop();
-          delete worst;
-          death_queue.push(new_helper);
-        } else {
-          delete new_helper;
-        }
-
-      } // end choose minimal death 
+      if (!insert_death_que(death_queue, new_helper)) {
+        delete new_helper;
+      }
 
       delete rpick_new;
 
-    } // end for auto rpick
+    }  // end for auto rpick
 
     delete lpick_new;
-  } // end for auto lpick
+  }  // end for auto lpick
 
   while (death_queue.size()) {
     auto pick = death_queue.top();
@@ -786,13 +808,12 @@ void PatternTree::merge_hrz(PTNode* pt_node) {
 }
 
 /**
- * @brief Construct a new Pick Helper:: Pick Helper object 
- * 
+ * @brief Construct a new Pick Helper:: Pick Helper object
+ *
  * @param first   cells chosen first
  * @param second  cells chosen later
  */
-PickHelper::PickHelper(PickHelper* first, PickHelper* second)
-  :_death(0) {
+PickHelper::PickHelper(PickHelper* first, PickHelper* second) : _death(0) {
   ASSERT(first && second, "Please enter valid data");
 
   for (auto item : first->get_items()) {
@@ -836,7 +857,8 @@ void PatternTree::adjust_interposer_left(std::vector<PickItem*>& left_items) {
   }
 }
 
-void PatternTree::adjust_interposer_bottom(std::vector<PickItem*>& bottom_items) {
+void PatternTree::adjust_interposer_bottom(
+    std::vector<PickItem*>& bottom_items) {
   for (auto item : bottom_items) {
     if (!is_interposer_bottom(item->_vcg_id)) continue;
 
@@ -857,7 +879,8 @@ void VCG::gen_GDS() {
 #ifndef GDS
   return;
 #endif
-  std::string fname = "../output/myresult" + std::to_string(_gds_file_num) + ".gds";
+  std::string fname =
+      "../output/myresult" + std::to_string(_gds_file_num) + ".gds";
   std::fstream gds;
   gds.open(fname, std::ios::out);
   assert(gds.is_open());
@@ -875,16 +898,14 @@ void VCG::gen_GDS() {
       continue;
 
     Cell* cell = node->get_cell();
-    if (cell == nullptr) {
-      g_log << "[gen_GDS()] node_" << std::to_string(node->get_vcg_id()) << "miss cell\n";
-      continue; 
-    }
+    if (cell == nullptr) continue;
     ++cell_num;
 
     // rectangle's four relative coordinates
     // template
     gds << "BGNSTR\n";
-    gds << "STRNAME " << cell->get_refer() << std::to_string(node->get_vcg_id()) << "\n";
+    gds << "STRNAME " << cell->get_refer() << std::to_string(node->get_vcg_id())
+        << "\n";
     gds << "BOUNDARY\n";
     gds << "LAYER " << std::to_string(cell_num) << "\n";
     gds << "DATATYPE 0\n";
@@ -934,7 +955,8 @@ void VCG::gen_GDS() {
 
     // template
     gds << "SREF\n";
-    gds << "SNAME " << cell->get_refer() << std::to_string(node->get_vcg_id()) << "\n";
+    gds << "SNAME " << cell->get_refer() << std::to_string(node->get_vcg_id())
+        << "\n";
     gds << "XY " << std::to_string(cell->get_c1()._x) << ": "
         << std::to_string(cell->get_c1()._y) << "\n";  // c1 point
     gds << "ENDEL\n";
@@ -954,7 +976,7 @@ void VCG::gen_GDS() {
   gds.close();
 }
 
-void VCG::get_interposer_c3(int ret_arr[4]/*out*/) {
+void VCG::get_interposer_c3(int ret_arr[4] /*out*/) {
   Point constraint;
 
   int min_y = 0;
@@ -963,12 +985,11 @@ void VCG::get_interposer_c3(int ret_arr[4]/*out*/) {
   for (auto column : _id_grid) {
     auto cell = get_cell(column[0]);
     if (cell == nullptr) continue;
-    
+
     get_cst_y(cell->get_vcg_id(), constraint);
     min_y = std::max(min_y, cell->get_c3()._y + constraint._x);
-    max_y = max_y == 0 ?
-            cell->get_c3()._y + constraint._y :
-            std::min(max_y, cell->get_c3()._y + constraint._y);
+    max_y = max_y == 0 ? cell->get_c3()._y + constraint._y
+                       : std::min(max_y, cell->get_c3()._y + constraint._y);
   }
 
   // right
@@ -982,17 +1003,16 @@ void VCG::get_interposer_c3(int ret_arr[4]/*out*/) {
 
       get_cst_x(cell->get_vcg_id(), constraint);
       min_x = std::max(min_x, cell->get_c3()._x + constraint._x);
-      max_x = max_x == 0 ?
-              cell->get_c3()._x + constraint._y :
-              std::min(max_x, cell->get_c3()._x + constraint._y);
+      max_x = max_x == 0 ? cell->get_c3()._x + constraint._y
+                         : std::min(max_x, cell->get_c3()._x + constraint._y);
     }
   }
 
   // debug
-  g_log << "\n";
-  g_log << "##Interposer_x " << min_x << " ~ " << max_x << "\n";
-  g_log << "##Interposer_y " << min_y << " ~ " << max_y << "\n";
-  g_log.flush();
+  // g_log << "\n";
+  // g_log << "##Interposer_x " << min_x << " ~ " << max_x << "\n";
+  // g_log << "##Interposer_y " << min_y << " ~ " << max_y << "\n";
+  // g_log.flush();
 
   ret_arr[0] = min_x;
   ret_arr[1] = max_x;
@@ -1000,11 +1020,11 @@ void VCG::get_interposer_c3(int ret_arr[4]/*out*/) {
   ret_arr[3] = max_y;
 }
 
-void PatternTree::get_box_range_fit_litems( const std::vector<PickItem*>& r_items /*in*/,
-                                            const std::vector<PickItem*>& l_items /*in*/,
-                                            const Rectangle& l_box /*in*/,
-                                            Point& r_box_left /*out*/) {
-  int min_x = l_box._c3._x;
+void PatternTree::get_box_range_fit_litems(
+    const std::vector<PickItem*>& r_items /*in*/,
+    const std::vector<PickItem*>& l_items /*in*/, int l_box_c3_x /*in*/,
+    Point& r_box_left /*out*/) {
+  int min_x = l_box_c3_x;
   int max_x = 0;
 
   for (auto r_item : r_items) {
@@ -1025,15 +1045,52 @@ void PatternTree::get_box_range_fit_litems( const std::vector<PickItem*>& r_item
         get_cst_x(r_cell->get_cell_type(), l_cell->get_cell_type(), r_box_left);
 
         min_x = std::max(l_cell->get_c3()._x + r_box_left._x, min_x);
-        max_x = max_x == 0 ?
-                l_cell->get_c3()._x + r_box_left._y :
-                std::min(l_cell->get_c3()._x + r_box_left._y, max_x);
+        max_x = max_x == 0
+                    ? l_cell->get_c3()._x + r_box_left._y
+                    : std::min(l_cell->get_c3()._x + r_box_left._y, max_x);
       }
-    } // end auto l_item
-  } // end auto r_item
+    }  // end auto l_item
+  }    // end auto r_item
 
   r_box_left._x = min_x;
   r_box_left._y = max_x;
+}
+
+void PatternTree::get_box_range_fit_bitems(
+    const std::vector<PickItem*>& t_items /*in*/,
+    const std::vector<PickItem*>& b_items /*in*/, int b_box_c3_y /*in*/,
+    Point& t_box_bottom /*out*/) {
+  int min_y = b_box_c3_y;
+  int max_y = 0;
+
+  for (auto t_item : t_items) {
+    auto t_cell = _cm->get_cell(t_item->_cell_id);
+    assert(t_cell);
+
+    // restore top cell's status
+    set_cell_status(t_cell, t_item);
+
+    for (auto b_item : b_items) {
+      auto b_cell = _cm->get_cell(b_item->_cell_id);
+      assert(b_cell);
+
+      // restore bottom cell's status
+      set_cell_status(b_cell, b_item);
+
+      if (is_overlap_x(t_cell, b_cell, false)) {
+        get_cst_y(t_cell->get_cell_type(), b_cell->get_cell_type(),
+                  t_box_bottom);
+
+        min_y = std::max(b_cell->get_c3()._y + t_box_bottom._x, min_y);
+        max_y = max_y == 0
+                    ? b_cell->get_c3()._y + t_box_bottom._y
+                    : std::min(b_cell->get_c3()._y + t_box_bottom._y, max_y);
+      }
+    }  // end auto b_item
+  }    // end auto t_item
+
+  t_box_bottom._x = min_y;
+  t_box_bottom._y = max_y;
 }
 
 void PatternTree::debug_GDS(PickHelper* helper) {
@@ -1041,10 +1098,7 @@ void PatternTree::debug_GDS(PickHelper* helper) {
 
   for (auto item : helper->get_items()) {
     auto cell = _cm->get_cell(item->_cell_id);
-    if (cell == nullptr) {
-      g_log << "cell_id = " << item->_cell_id << "missing\n";
-      continue;
-    }
+    if (cell == nullptr) continue;
 
     set_cell_status(cell, item);
     _vcg->do_pick_cell(item->_vcg_id, cell);
@@ -1054,11 +1108,11 @@ void PatternTree::debug_GDS(PickHelper* helper) {
 }
 
 /**
- *  @param helper 
+ *  @param helper
  *  @param box    box will be reset, and then form bounding box of helper
  */
-void PatternTree::get_helper_box( PickHelper* helper /*in*/, 
-                                  Rectangle& box /*out*/) {
+void PatternTree::get_helper_box(PickHelper* helper /*in*/,
+                                 Rectangle& box /*out*/) {
   if (!helper) return;
 
   // first
@@ -1108,5 +1162,191 @@ void VCG::undo_all_picks() {
     undo_pick_cell(node->get_vcg_id());
   }
 }
+
+void PatternTree::merge_vtc(PTNode* pt_node) {
+  assert(pt_node && pt_node->get_type() == KPTHorizontal);
+  auto children = pt_node->get_children();
+  ASSERT(children.size() == 2, "Topology error");
+  auto bchild = children[0];
+  auto tchild = children[1];
+
+  std::set<uint8_t> bpick_vcg_id_set;
+  std::set<uint8_t> tpick_vcg_id_set;
+  std::vector<PickItem*> b_items;
+  std::vector<PickItem*> t_items;
+  std::priority_queue<PickHelper*, std::vector<PickHelper*>, CmpPickHelperDeath>
+      death_queue;
+  Rectangle box;
+  for (auto bpick : bchild->get_picks()) {
+    PickHelper* bpick_new = new PickHelper(bpick);
+
+    // interposer
+    bchild->get_grid_lefts(bpick_vcg_id_set);
+    bpick_new->get_items(bpick_vcg_id_set, b_items);
+    adjust_interposer_left(b_items);
+
+    bchild->get_grid_bottoms(bpick_vcg_id_set);
+    bpick_new->get_items(bpick_vcg_id_set, b_items);
+    adjust_interposer_bottom(b_items);
+
+    // update bottom box
+    get_helper_box(bpick_new, box);
+    bpick_new->set_box(box);
+
+    bchild->get_grid_tops(bpick_vcg_id_set);
+    bpick_new->get_items(bpick_vcg_id_set, b_items);
+
+    // debug
+    // debug_GDS(bpick_new);
+
+    for (auto tpick : tchild->get_picks()) {
+      if (is_pick_repeat(bpick_new, tpick)) continue;
+
+      PickHelper* tpick_new = new PickHelper(tpick);
+      // interposer
+      tchild->get_grid_lefts(tpick_vcg_id_set);
+      tpick_new->get_items(tpick_vcg_id_set, t_items);
+      adjust_interposer_left(t_items);
+
+      // update top box
+      get_helper_box(tpick_new, box);
+      tpick_new->set_box(box);
+
+      // two pt_node
+      tchild->get_grid_bottoms(tpick_vcg_id_set);
+      tpick_new->get_items(tpick_vcg_id_set, t_items);
+
+      Point range;
+      get_box_range_fit_bitems(t_items, b_items, bpick_new->get_box()._c3._y,
+                               range);
+      int y_move = range._x;
+      if (range._x > range._y) {
+        y_move = range._x;
+
+        g_log << "[VTC merging violate] occur in pt_node = "
+              << std::to_string(pt_node->get_pt_id()) << ", "
+              << "range.min_y = " << range._x << ", "
+              << "range.max_y = " << range._y << "\n";
+      }
+
+      for (auto t_item : tpick_new->get_items()) {
+        t_item->_c1_y += y_move;
+      }
+
+      PickHelper* new_helper = new PickHelper(bpick_new, tpick_new);
+
+      get_helper_box(new_helper, box);
+      new_helper->set_box(box);
+      int cell_area = get_cells_area(new_helper);
+      new_helper->set_death(1.0 * (box.get_area() - cell_area) /
+                            box.get_area());
+
+      // debug
+      // debug_GDS(new_helper);
+
+      if (!insert_death_que(death_queue, new_helper)) {
+        delete new_helper;
+      }
+
+      delete tpick_new;
+
+    }  // end for auto tpick
+
+    delete bpick_new;
+  }  // end for auto bpick
+
+  while (death_queue.size()) {
+    auto pick = death_queue.top();
+    death_queue.pop();
+    pt_node->insert_pick(pick);
+
+    // debug
+    // debug_GDS(pick);
+  }
+}
+
+/**
+ * @brief
+ *
+ * @param queue   container
+ * @param helper  helper to insert
+ * @return false  please manage helper(eg: release it)
+ * @return true   insert successfully or helper is nullptr
+ */
+bool PatternTree::insert_death_que(DeathQue& queue, PickHelper* helper) {
+  if (!helper) return true;
+
+  // choose minimal death
+  if (queue.size() < max_combination) {
+    queue.push(helper);
+    return true;
+  } else {
+    auto worst = queue.top();
+    if (worst->get_death() > helper->get_death()) {
+      queue.pop();
+      delete worst;
+      queue.push(helper);
+      return true;
+    }
+  }  // end choose minimal death
+
+  return false;
+}
+
+void VCG::set_cells_by_helper(PickHelper* helper) {
+  _helper = helper;
+
+  for (auto item : _helper->get_items()) {
+    auto cell = _cm->get_cell(item->_cell_id);
+    assert(cell);
+
+    _tree->set_cell_status(cell, item);
+    do_pick_cell(item->_vcg_id, cell);
+  }
+}
+
+void VCG::update_pitem(Cell* cell) {
+  if (!cell || !_helper) return;
+
+  TODO();
+}
+
+PTNode* PatternTree::get_biggest_column(uint8_t vcg_id) {
+  auto pt_id = get_pt_id(vcg_id);
+  ASSERT(pt_id >= 0, "No pt_node contains vcg_id = %d", vcg_id);
+  auto pt_node = get_pt_node(pt_id);
+  ASSERT(pt_node, "No pt_node whose pt_id = %d", pt_id);
+
+  PTNode* parent = pt_node->get_parent();
+  while (parent && parent->get_type() != kPTVertical) {
+    pt_node = parent;
+    parent = pt_node->get_parent();
+  }
+
+  return pt_node;
+}
+
+int PatternTree::get_pt_id(uint8_t vcg_id) {
+  for (auto pair : _pt_grid_map) {
+    if (pair.second == vcg_id) {
+      return pair.first;
+    }
+  }
+
+  return -1;
+}
+
+// void VCG::debug_picks() {
+//   g_log << "Picks:\n";
+//   for (auto node : _adj_list) {
+//     auto cell = node->get_cell();
+//     if (cell == nullptr) continue;
+
+//     g_log << "nodeid = " << std::to_string(node->get_vcg_id())
+//           << ", cell_id = " << cell->get_cell_id() << "\n";
+//     g_log.flush();
+//   }
+//   g_log << "----------\n";
+// }
 
 }  // namespace  EDA_CHALLENGE_Q4

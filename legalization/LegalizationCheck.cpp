@@ -1,7 +1,7 @@
 /*
  * @Author: your name
  * @Date: 2021-12-10 21:00:11
- * @LastEditTime: 2021-12-11 23:24:01
+ * @LastEditTime: 2021-12-12 10:58:19
  * @LastEditors: Please set LastEditors
  * @Description: 打开koroFileHeader查看配置 进行设置:
  * https://github.com/OBKoro1/koro1FileHeader/wiki/%E9%85%8D%E7%BD%AE
@@ -16,13 +16,13 @@ namespace EDA_CHALLENGE_Q4 {
 
 bool LegalizationCheck::isNumLegal(int num, Point range) {
   // range x y is the same represet the num must bigger.
-  if (range._x == range._y) {
-    if (num >= range._x) {
-      return true;
-    } else {
-      return false;
-    }
-  }
+  // if (range._x == range._y) {
+  //   if (num >= range._x) {
+  //     return true;
+  //   } else {
+  //     return false;
+  //   }
+  // }
 
   if (num >= range._x && num <= range._y) {
     return true;
@@ -34,8 +34,8 @@ bool LegalizationCheck::isNumLegal(int num, Point range) {
 bool LegalizationCheck::isLeftBoundaryViolated(VCGNode* node) {
   auto cell = node->get_cell();
 
-  auto node_it = _vertex_to_boundary_x_range.find(node);
-  if (node_it == _vertex_to_boundary_x_range.end()) {
+  auto node_it = _vertex_to_x_range.find(node);
+  if (node_it == _vertex_to_x_range.end()) {
     std::cout << "Cell : " << cell->get_cell_id()
               << " x range has not been initilized." << std::endl;
     exit(1);
@@ -51,8 +51,8 @@ bool LegalizationCheck::isLeftBoundaryViolated(VCGNode* node) {
 bool LegalizationCheck::isDownBoundaryViolated(VCGNode* node) {
   auto cell = node->get_cell();
 
-  auto node_it = _vertex_to_boundary_y_range.find(node);
-  if (node_it == _vertex_to_boundary_y_range.end()) {
+  auto node_it = _vertex_to_y_range.find(node);
+  if (node_it == _vertex_to_y_range.end()) {
     std::cout << "Cell : " << cell->get_cell_id()
               << " y range has not been initilized." << std::endl;
     exit(1);
@@ -65,11 +65,11 @@ bool LegalizationCheck::isDownBoundaryViolated(VCGNode* node) {
   }
 }
 
-Point LegalizationCheck::obtainLeftXBoundaryRange(VCGNode* node) {
+Point LegalizationCheck::obtainLeftXRange(VCGNode* node) {
   auto cell = node->get_cell();
 
-  auto node_it = _vertex_to_boundary_x_range.find(node);
-  if (node_it == _vertex_to_boundary_x_range.end()) {
+  auto node_it = _vertex_to_x_range.find(node);
+  if (node_it == _vertex_to_x_range.end()) {
     std::cout << "Cell : " << cell->get_cell_id()
               << " y range has not been initilized." << std::endl;
     exit(1);
@@ -77,11 +77,11 @@ Point LegalizationCheck::obtainLeftXBoundaryRange(VCGNode* node) {
   return node_it->second;
 }
 
-Point LegalizationCheck::obtainDownYBoundaryRange(VCGNode* node) {
+Point LegalizationCheck::obtainDownYRange(VCGNode* node) {
   auto cell = node->get_cell();
 
-  auto node_it = _vertex_to_boundary_y_range.find(node);
-  if (node_it == _vertex_to_boundary_y_range.end()) {
+  auto node_it = _vertex_to_y_range.find(node);
+  if (node_it == _vertex_to_y_range.end()) {
     std::cout << "Cell : " << cell->get_cell_id()
               << " y range has not been initilized." << std::endl;
     exit(1);
@@ -152,10 +152,10 @@ void LegalizationCheck::updateVertexXYCoordRange(VCGNode* node) {
   if (is_interposer_left) {
     Point x_range;
     _vcg->get_cst_x(node->get_vcg_id(), x_range);
-    _vertex_to_boundary_x_range[node] = x_range;
+    _vertex_to_x_range[node] = x_range;
   } else {
     int box_right_x;  // TODO
-    _vertex_to_boundary_x_range[node] = Point(box_right_x, box_right_x);
+    _vertex_to_x_range[node] = Point(box_right_x, box_right_x);
   }
 
   bool is_interposer_bottom =
@@ -163,10 +163,10 @@ void LegalizationCheck::updateVertexXYCoordRange(VCGNode* node) {
   if (is_interposer_bottom) {
     Point y_range;
     _vcg->get_cst_y(node->get_vcg_id(), y_range);
-    _vertex_to_boundary_y_range[node] = y_range;
+    _vertex_to_y_range[node] = y_range;
   } else {
     int box_upper_y;  // TODO
-    _vertex_to_boundary_y_range[node] = Point(box_upper_y, box_upper_y);
+    _vertex_to_y_range[node] = Point(box_upper_y, box_upper_y);
   }
 }
 
@@ -257,12 +257,12 @@ void LegalizationCheck::initVertexLocInfo() {
   }
 }
 
-void LegalizationCheck::set_left_x_boundary_range(VCGNode* node, Point range) {
-  _vertex_to_boundary_x_range[node] = range;
+void LegalizationCheck::set_left_x_range(VCGNode* node, Point range) {
+  _vertex_to_x_range[node] = range;
 }
 
-void LegalizationCheck::set_down_y_boundary_range(VCGNode* node, Point range) {
-  _vertex_to_boundary_y_range[node] = range;
+void LegalizationCheck::set_down_y_range(VCGNode* node, Point range) {
+  _vertex_to_y_range[node] = range;
 }
 
 }  // namespace EDA_CHALLENGE_Q4
