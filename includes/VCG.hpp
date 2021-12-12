@@ -52,22 +52,29 @@ class PickHelper {
   auto get_box() const { return _box; }
   auto get_death() const { return _death; }
   auto get_items_num() const { return _items.size(); }
+  auto get_pt_id() const { return _pt_id; }
+  auto get_sources() const { return _sources; }
 
   // setter
   void set_box(const Rectangle& r) { _box = r; }
   void set_box(int, int, int, int);
   void set_death(float d) { _death = d; }
+  void set_pt_id(int pt_id) { _pt_id = pt_id; }
 
   // function
   PickItem* get_item(uint8_t);
   void get_items(const std::set<uint8_t>&, std::vector<PickItem*>&);
+  PickHelper* get_pt_node_helper(uint8_t, int);
+  void insert_source(PickHelper*);
 
  private:
   // members
   std::vector<PickItem*> _items;
   std::map<uint8_t, PickItem*> _id_item_map;  // vcg_id->item
+  std::vector<PickHelper*> _sources;
   Rectangle _box;
   float _death;
+  int _pt_id;
 };
 
 struct CmpPickHelperDeath {
@@ -325,6 +332,17 @@ class VCG {
   void init_column_row_index();
   void debug();
   void get_interposer_c3(int[4]);
+<<<<<<< HEAD
+=======
+  void get_cst_x(uint8_t, Point&);
+  void get_cst_x(uint8_t, uint8_t, Point&);
+  void get_cst_y(uint8_t, Point&);
+  void get_cst_y(uint8_t, uint8_t, Point&);
+  void set_cells_by_helper(PickHelper*);
+  void debug_picks();
+  PickHelper* get_biggest_column_helper(uint8_t);
+ 
+>>>>>>> 15cd75f604a3699d34d18b024d794e3f45ec1430
   // members
   std::vector<VCGNode*> _adj_list;  // Node0 is end, final Node is start
   GridType _id_grid;                // pattern matrix [column][row]
@@ -687,7 +705,7 @@ inline void PatternTree::set_vcg(VCG* vcg) {
 }
 
 inline PickHelper::PickHelper(uint8_t grid_value, int cell_id, bool rotation)
-    : _death(0) {
+    : _death(0), _pt_id(-1) {
   auto p = new PickItem(grid_value, cell_id, rotation, 0, 0);
   _items.push_back(p);
   _id_item_map[grid_value] = p;
@@ -726,7 +744,9 @@ inline PickHelper::~PickHelper() {
     delete i;
   }
   _items.clear();
+
   _id_item_map.clear();
+  _sources.clear();
 }
 
 inline PickItem::PickItem(const PickItem& p)
@@ -961,7 +981,7 @@ inline void PatternTree::set_cell_status(Cell* cell /*out*/,
   }
 }
 
-inline PickHelper::PickHelper(PickHelper* helper) : _death(0) {
+inline PickHelper::PickHelper(PickHelper* helper) : _death(0), _pt_id(-1) {
   for (auto item : helper->get_items()) {
     _items.push_back(new PickItem(*item));
   }
@@ -972,6 +992,17 @@ inline PickHelper::PickHelper(PickHelper* helper) : _death(0) {
 
 inline PTNode* PatternTree::get_pt_node(int pt_id) {
   return _node_map.count(pt_id) ? _node_map[pt_id] : nullptr;
+}
+
+/**
+ * @brief Please insert by TOPOLOGICAL order!
+ *
+ * @param helper
+ */
+inline void PickHelper::insert_source(PickHelper* helper) {
+  if (helper) {
+    _sources.push_back(helper);
+  }
 }
 
 }  // namespace EDA_CHALLENGE_Q4

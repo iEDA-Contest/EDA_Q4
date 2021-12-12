@@ -1,7 +1,7 @@
 /*
  * @Author: sjchanson
  * @Date: 2021-12-10 21:01:11
- * @LastEditTime: 2021-12-11 23:31:58
+ * @LastEditTime: 2021-12-12 11:14:13
  * @LastEditors: Please set LastEditors
  * @Description: 打开koroFileHeader查看配置 进行设置:
  * https://github.com/OBKoro1/koro1FileHeader/wiki/%E9%85%8D%E7%BD%AE
@@ -45,12 +45,12 @@ void CellMovement::executeCellMovement() {
 
       // step 1 : fit the boundary condition.
       if (_checker->isLeftBoundaryViolated(vertex)) {
-        auto range = _checker->obtainLeftXBoundaryRange(vertex);
+        auto range = _checker->obtainLeftXRange(vertex);
         Point new_coord(range._x, vertex->get_cell()->get_y());
         _checker->updateVertexLocInfo(current_vertex, new_coord);
       }
       if (_checker->isDownBoundaryViolated(vertex)) {
-        auto range = _checker->obtainDownYBoundaryRange(vertex);
+        auto range = _checker->obtainDownYRange(vertex);
         Point new_coord(vertex->get_cell()->get_x(), range._x);
         _checker->updateVertexLocInfo(current_vertex, new_coord);
       }
@@ -128,7 +128,7 @@ bool CellMovement::checkLegalAndMoveCell(std::vector<VCGNode*> left_vertexes,
     int max_move_value =
         new_coord._x + (min_type_cst.x_range._y - min_type_cst.x_range._x);
     Point move_range(new_coord._x, max_move_value);
-    _checker->set_left_x_boundary_range(current_vertex, move_range);
+    _checker->set_left_x_range(current_vertex, move_range);
     return false;
   }
 
