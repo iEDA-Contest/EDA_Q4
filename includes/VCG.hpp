@@ -45,6 +45,7 @@ class PickHelper {
   PickHelper(uint8_t, int, bool);
   PickHelper(PickHelper*, PickHelper*);
   PickHelper(PickHelper*);
+  PickHelper(PickHelper *, PickHelper *, PickHelper *, PickHelper *, PickHelper *);
   ~PickHelper();
 
   // getter
@@ -193,6 +194,8 @@ class PatternTree {
   void get_from_vcg_ids(uint8_t, std::set<uint8_t>&);
   bool is_pick_same(PickHelper*, PickHelper*);
   void second_pick_replace(PTNode*, PTNode*, DeathQue&);
+  void merge_wheel(PTNode *);
+
 
   // members
   std::map<int, PTNode*> _node_map;     // pt_id->pt_node

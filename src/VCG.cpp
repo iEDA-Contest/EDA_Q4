@@ -667,7 +667,8 @@ void PatternTree::visit_pt_node(int pt_id) {
       merge_vtc(pt_node);
       break;
     case kPTWheel:
-      TODO();
+      merge_wheel(pt_node);
+      break;
 
     default:
       PANIC("Unhandled pt_node type = %d", pt_node->get_type());
@@ -678,9 +679,11 @@ void PatternTree::visit_pt_node(int pt_id) {
   }
 
   // debug
-  // for (auto pick : pt_node->get_picks()) {
-  //   debug_GDS(pick);
-  // }
+  if (pt_node->get_pt_id() == 16) {
+    for (auto pick : pt_node->get_picks()) {
+      debug_GDS(pick);
+    }
+  }
 }
 
 void PatternTree::list_possibility(PTNode* pt_node) {
@@ -1555,5 +1558,590 @@ void PatternTree::second_pick_replace(PTNode* first /*in*/,
     }
   }
 }
+
+// wu wen_rui >>>>>>>
+
+void PatternTree::merge_wheel(PTNode *pt_node)
+{
+  assert(pt_node && pt_node->get_type() == kPTWheel);
+  auto children = pt_node->get_children();
+  ASSERT(children.size() == 5, "Topology error");
+  std::vector<uint8_t> orders;
+  get_topological_sort(pt_node->get_grid(), orders);
+  PTNode *child0;
+  PTNode *child1;
+  PTNode *child2;
+  PTNode *child3;
+  PTNode *child4;
+
+  for (auto child : children)
+  {
+    auto grid = child->get_grid();
+    if (grid[0][0] == orders[0])
+      child0 = child;
+    if (grid[0][0] == orders[1])
+      child1 = child;
+    if (grid[0][0] == orders[2])
+      child2 = child;
+    if (grid[0][0] == orders[3])
+      child3 = child;
+    if (grid[0][0] == orders[4])
+      child4 = child;
+  }
+
+  std::set<uint8_t> pick_vcg_id_set0;
+  std::set<uint8_t> pick_vcg_id_set1;
+  std::set<uint8_t> pick_vcg_id_set2;
+  std::set<uint8_t> pick_vcg_id_set3;
+  std::set<uint8_t> pick_vcg_id_set4;
+  std::vector<PickItem *> items0;
+  std::vector<PickItem *> items1;
+  std::vector<PickItem *> items2;
+  std::vector<PickItem *> items3;
+  std::vector<PickItem *> items4;
+
+  std::priority_queue<PickHelper *, std::vector<PickHelper *>,
+                      CmpPickHelperDeath> death_queue;
+  Rectangle box;
+  Point range;
+  auto grid0 = child0->get_grid();
+  if (child0->get_grid().size() > grid0[0].size())
+  {
+    for (auto pick0 : child0->get_picks())
+    {
+      PickHelper *pick_new0 = new PickHelper(pick0);
+      // interposer
+      child0->get_grid_lefts(pick_vcg_id_set0);
+      pick_new0->get_items(pick_vcg_id_set0, items0);
+      adjust_interposer_left(items0);
+
+      child0->get_grid_bottoms(pick_vcg_id_set0);
+      pick_new0->get_items(pick_vcg_id_set0, items0);
+      adjust_interposer_bottom(items0);
+
+      // update bottom box
+      get_helper_box(pick_new0, box);
+      pick_new0->set_box(box);
+
+      child0->get_grid_tops(pick_vcg_id_set0);
+      pick_new0->get_items(pick_vcg_id_set0, items0);
+
+      for (auto pick1 : child1->get_picks())
+      {
+        if (is_pick_repeat(pick0, pick1))
+          continue;
+
+        PickHelper *pick_new1 = new PickHelper(pick1);
+        // interposer
+        child1->get_grid_lefts(pick_vcg_id_set1);
+        pick_new1->get_items(pick_vcg_id_set1, items1);
+        adjust_interposer_left(items1);
+
+        // update top box
+        get_helper_box(pick_new1, box);
+        pick_new1->set_box(box);
+
+        child1->get_grid_bottoms(pick_vcg_id_set1);
+        pick_new1->get_items(pick_vcg_id_set1, items1);
+
+        
+        get_box_range_fit_bitems(items1, items0, pick_new0->get_box()._c3._y, range);
+        int y_move = range._x;
+        if (range._x > range._y)
+        {
+          y_move = range._y;
+
+          g_log << "[VRT merging violate] occur in pt_node = "
+                << std::to_string(pt_node->get_pt_id())
+                << "range.min_x = " << range._x << ", "
+                << "range.max_x = " << range._y << "\n";
+        }
+
+        for (auto r_item : pick_new1->get_items())
+        {
+          r_item->_c1_y += y_move;
+        }
+        // interposer
+        items1.clear();
+        pick_vcg_id_set1.clear();
+
+        child1->get_grid_lefts(pick_vcg_id_set1);
+        pick_new1->get_items(pick_vcg_id_set1, items1);
+        adjust_interposer_left(items1);
+        child1->get_grid_bottoms(pick_vcg_id_set1);
+        pick_new1->get_items(pick_vcg_id_set1, items1);
+        adjust_interposer_bottom(items1);
+
+        for (auto pick2 : child2->get_picks())
+        {
+          if (is_pick_repeat(pick0, pick1) || is_pick_repeat(pick1, pick2) || is_pick_repeat(pick0, pick2))
+            continue;
+
+          PickHelper *pick_new2 = new PickHelper(pick2);
+
+          // interposer
+          child2->get_grid_bottoms(pick_vcg_id_set2);
+          pick_new2->get_items(pick_vcg_id_set2, items2);
+          adjust_interposer_bottom(items2);
+
+          // update top box
+          get_helper_box(pick_new2, box);
+          pick_new2->set_box(box);
+
+          child2->get_grid_lefts(pick_vcg_id_set2);
+          pick_new2->get_items(pick_vcg_id_set2, items2);
+
+          get_box_range_fit_litems(items2, items1, pick_new0->get_box()._c3._x, range);
+          int x_move = range._x;
+          if (range._x > range._y)
+          {
+            x_move = range._y;
+
+            g_log << "[HRZ merging violate] occur in pt_node = "
+                  << std::to_string(pt_node->get_pt_id())
+                  << "range.min_x = " << range._x << ", "
+                  << "range.max_x = " << range._y << "\n";
+          }
+
+          for (auto r_item : pick_new2->get_items())
+          {
+            r_item->_c1_x += x_move;
+          }
+          // interposer
+          items2.clear();
+          pick_vcg_id_set2.clear();
+          child2->get_grid_lefts(pick_vcg_id_set2);
+          pick_new2->get_items(pick_vcg_id_set2, items2);
+          adjust_interposer_left(items2);
+
+          // update top box
+          get_helper_box(pick_new2, box);
+          pick_new2->set_box(box);
+
+          child2->get_grid_bottoms(pick_vcg_id_set2);
+          pick_new2->get_items(pick_vcg_id_set2, items2);
+
+          get_box_range_fit_bitems(items2, items0, pick_new0->get_box()._c3._y, range);
+          int y_move = range._x;
+          if (range._x > range._y)
+          {
+            y_move = range._y;
+
+            g_log << "[VRT merging violate] occur in pt_node = "
+                  << std::to_string(pt_node->get_pt_id())
+                  << "range.min_x = " << range._x << ", "
+                  << "range.max_x = " << range._y << "\n";
+          }
+
+          for (auto r_item : pick_new2->get_items())
+          {
+            r_item->_c1_y += y_move;
+          }
+
+          // interposer
+          items2.clear();
+          pick_vcg_id_set2.clear();
+
+          child2->get_grid_lefts(pick_vcg_id_set2);
+          pick_new2->get_items(pick_vcg_id_set2, items2);
+          adjust_interposer_left(items2);
+          child2->get_grid_bottoms(pick_vcg_id_set2);
+          pick_new2->get_items(pick_vcg_id_set2, items2);
+          adjust_interposer_bottom(items2);
+
+          for (auto pick3 : child3->get_picks())
+          {
+            if (is_pick_repeat(pick0, pick1) || is_pick_repeat(pick1, pick2) || is_pick_repeat(pick2, pick3) || is_pick_repeat(pick0, pick2) || is_pick_repeat(pick0, pick3) || is_pick_repeat(pick1, pick3))
+              continue;
+
+            PickHelper *pick_new3 = new PickHelper(pick3);
+
+            // interposer
+            child3->get_grid_bottoms(pick_vcg_id_set3);
+            pick_new3->get_items(pick_vcg_id_set3, items3);
+            adjust_interposer_bottom(items3);
+
+            // update top box
+            get_helper_box(pick_new3, box);
+            pick_new3->set_box(box);
+
+            child3->get_grid_lefts(pick_vcg_id_set3);
+            pick_new3->get_items(pick_vcg_id_set3, items3);
+
+            get_box_range_fit_litems(items3, items1, pick_new0->get_box()._c3._x, range);
+            int x_move = range._x;
+            if (range._x > range._y)
+            {
+              x_move = range._y;
+
+              g_log << "[HRZ merging violate] occur in pt_node = "
+                    << std::to_string(pt_node->get_pt_id())
+                    << "range.min_x = " << range._x << ", "
+                    << "range.max_x = " << range._y << "\n";
+            }
+
+            for (auto r_item : pick_new3->get_items())
+            {
+              r_item->_c1_x += x_move;
+            }
+
+            // interposer
+            items3.clear();
+            pick_vcg_id_set3.clear();
+
+            child3->get_grid_lefts(pick_vcg_id_set3);
+            pick_new3->get_items(pick_vcg_id_set3, items3);
+            adjust_interposer_left(items3);
+            child3->get_grid_bottoms(pick_vcg_id_set3);
+            pick_new3->get_items(pick_vcg_id_set3, items3);
+            adjust_interposer_bottom(items3);
+
+            for (auto pick4 : child4->get_picks())
+            {
+              if (is_pick_repeat(pick0, pick1) || is_pick_repeat(pick1, pick2) || is_pick_repeat(pick2, pick3) || is_pick_repeat(pick3, pick4) || is_pick_repeat(pick0, pick2) || is_pick_repeat(pick0, pick3) || is_pick_repeat(pick1, pick3) || is_pick_repeat(pick0, pick4) || is_pick_repeat(pick1, pick4) || is_pick_repeat(pick2, pick4))
+                continue;
+
+              PickHelper *pick_new4 = new PickHelper(pick4);
+
+              // interposer
+              child4->get_grid_lefts(pick_vcg_id_set4);
+              pick_new4->get_items(pick_vcg_id_set4, items4);
+              adjust_interposer_left(items4);
+
+              // update top box
+              get_helper_box(pick_new4, box);
+              pick_new4->set_box(box);
+
+              child4->get_grid_bottoms(pick_vcg_id_set4);
+              pick_new4->get_items(pick_vcg_id_set4, items4);
+
+              get_box_range_fit_bitems(items4, items3, pick_new0->get_box()._c3._y, range);
+              int y_move = range._x;
+              if (range._x > range._y)
+              {
+                y_move = range._y;
+
+                g_log << "[VRT merging violate] occur in pt_node = "
+                      << std::to_string(pt_node->get_pt_id())
+                      << "range.min_x = " << range._x << ", "
+                      << "range.max_x = " << range._y << "\n";
+              }
+
+              for (auto r_item : pick_new4->get_items())
+              {
+                r_item->_c1_y += y_move;
+              }
+              PickHelper *new_helper = new PickHelper(pick_new0, pick_new1, pick_new2, pick_new3, pick_new4);
+
+              get_helper_box(new_helper, box);
+              new_helper->set_box(box);
+              int cell_area = get_cells_area(new_helper);
+              new_helper->set_death(1.0 * (box.get_area() - cell_area) / box.get_area());
+
+              // debug
+              // debug_GDS(new_helper);
+
+              if (!insert_death_que(death_queue, new_helper))
+              {
+                delete new_helper;
+              }
+              delete pick_new4;
+            }
+            delete pick_new3;
+          }
+          delete pick_new2;
+        }
+        delete pick_new1;
+      }
+      delete pick_new0;
+    }
+  }
+  else
+  {
+    for (auto pick0 : child0->get_picks())
+    {
+      PickHelper *pick_new0 = new PickHelper(pick0);
+      // interposer
+      child0->get_grid_lefts(pick_vcg_id_set0);
+      pick_new0->get_items(pick_vcg_id_set0, items0);
+      adjust_interposer_left(items0);
+
+      child0->get_grid_bottoms(pick_vcg_id_set0);
+      pick_new0->get_items(pick_vcg_id_set0, items0);
+      adjust_interposer_bottom(items0);
+
+      // update bottom box
+      get_helper_box(pick_new0, box);
+      pick_new0->set_box(box);
+
+      child0->get_grid_tops(pick_vcg_id_set0);
+      pick_new0->get_items(pick_vcg_id_set0, items0);
+
+      for (auto pick1 : child1->get_picks())
+      {
+        if (is_pick_repeat(pick0, pick1))
+          continue;
+
+        PickHelper *pick_new1 = new PickHelper(pick1);
+        // interposer
+        child1->get_grid_bottoms(pick_vcg_id_set1);
+        pick_new1->get_items(pick_vcg_id_set1, items1);
+        adjust_interposer_bottom(items1);
+
+        // update top box
+        get_helper_box(pick_new1, box);
+        pick_new1->set_box(box);
+
+        child1->get_grid_lefts(pick_vcg_id_set1);
+        pick_new1->get_items(pick_vcg_id_set1, items1);
+
+        Point range;
+        get_box_range_fit_litems(items1, items0, pick_new0->get_box()._c3._x, range);
+        int x_move = range._x;
+        if (range._x > range._y)
+        {
+          x_move = range._y;
+
+          g_log << "[HRZ merging violate] occur in pt_node = "
+                << std::to_string(pt_node->get_pt_id())
+                << "range.min_x = " << range._x << ", "
+                << "range.max_x = " << range._y << "\n";
+        }
+
+        for (auto r_item : pick_new1->get_items())
+        {
+          r_item->_c1_x += x_move;
+        }
+        // interposer
+        items1.clear();
+        pick_vcg_id_set1.clear();
+
+        child1->get_grid_lefts(pick_vcg_id_set1);
+        pick_new1->get_items(pick_vcg_id_set1, items1);
+        adjust_interposer_left(items1);
+        child1->get_grid_bottoms(pick_vcg_id_set1);
+        pick_new1->get_items(pick_vcg_id_set1, items1);
+        adjust_interposer_bottom(items1);
+
+        for (auto pick2 : child2->get_picks())
+        {
+          if (is_pick_repeat(pick0, pick1) || is_pick_repeat(pick1, pick2) || is_pick_repeat(pick0, pick2))
+            continue;
+          PickHelper *pick_new2 = new PickHelper(pick2);
+
+          // interposer
+          child2->get_grid_bottoms(pick_vcg_id_set2);
+          pick_new2->get_items(pick_vcg_id_set2, items2);
+          adjust_interposer_bottom(items2);
+
+          // update top box
+          get_helper_box(pick_new2, box);
+          pick_new2->set_box(box);
+
+          child2->get_grid_lefts(pick_vcg_id_set2);
+          pick_new2->get_items(pick_vcg_id_set2, items2);
+
+          Point range;
+          get_box_range_fit_litems(items2, items1, pick_new0->get_box()._c3._x, range);
+          int x_move = range._x;
+          if (range._x > range._y)
+          {
+            x_move = range._y;
+
+            g_log << "[HRZ merging violate] occur in pt_node = "
+                  << std::to_string(pt_node->get_pt_id())
+                  << "range.min_x = " << range._x << ", "
+                  << "range.max_x = " << range._y << "\n";
+          }
+
+          for (auto r_item : pick_new2->get_items())
+          {
+            r_item->_c1_x += x_move;
+          }
+          // interposer
+          items2.clear();
+          pick_vcg_id_set2.clear();
+          child2->get_grid_lefts(pick_vcg_id_set2);
+          pick_new2->get_items(pick_vcg_id_set2, items2);
+          adjust_interposer_left(items2);
+
+          // update top box
+          get_helper_box(pick_new2, box);
+          pick_new2->set_box(box);
+
+          child2->get_grid_bottoms(pick_vcg_id_set2);
+          pick_new2->get_items(pick_vcg_id_set2, items2);
+
+          get_box_range_fit_bitems(items2, items0, pick_new0->get_box()._c3._y, range);
+          int y_move = range._x;
+          if (range._x > range._y)
+          {
+            y_move = range._y;
+
+            g_log << "[VRT merging violate] occur in pt_node = "
+                  << std::to_string(pt_node->get_pt_id())
+                  << "range.min_x = " << range._x << ", "
+                  << "range.max_x = " << range._y << "\n";
+          }
+
+          for (auto r_item : pick_new2->get_items())
+          {
+            r_item->_c1_y += y_move;
+          }
+
+          // interposer
+          items2.clear();
+          pick_vcg_id_set2.clear();
+
+          child2->get_grid_lefts(pick_vcg_id_set2);
+          pick_new2->get_items(pick_vcg_id_set2, items2);
+          adjust_interposer_left(items2);
+          child2->get_grid_bottoms(pick_vcg_id_set2);
+          pick_new2->get_items(pick_vcg_id_set2, items2);
+          adjust_interposer_bottom(items2);
+
+          for (auto pick3 : child3->get_picks())
+          {
+            if (is_pick_repeat(pick0, pick1) || is_pick_repeat(pick1, pick2) || is_pick_repeat(pick2, pick3) || is_pick_repeat(pick0, pick2) || is_pick_repeat(pick0, pick3) || is_pick_repeat(pick1, pick3))
+              continue;
+
+            PickHelper *pick_new3 = new PickHelper(pick3);
+
+            // interposer
+            child3->get_grid_lefts(pick_vcg_id_set3);
+            pick_new3->get_items(pick_vcg_id_set3, items3);
+            adjust_interposer_left(items3);
+
+            // update top box
+            get_helper_box(pick_new3, box);
+            pick_new3->set_box(box);
+
+            child3->get_grid_bottoms(pick_vcg_id_set3);
+            pick_new3->get_items(pick_vcg_id_set3, items3);
+
+            Point range;
+            get_box_range_fit_bitems(items3, items1, pick_new0->get_box()._c3._y, range);
+            int y_move = range._x;
+            if (range._x > range._y)
+            {
+              y_move = range._y;
+
+              g_log << "[VRT merging violate] occur in pt_node = "
+                    << std::to_string(pt_node->get_pt_id())
+                    << "range.min_x = " << range._x << ", "
+                    << "range.max_x = " << range._y << "\n";
+            }
+
+            for (auto r_item : pick_new3->get_items())
+            {
+              r_item->_c1_y += y_move;
+            }
+
+            // interposer
+            items3.clear();
+            pick_vcg_id_set3.clear();
+
+            child3->get_grid_lefts(pick_vcg_id_set3);
+            pick_new3->get_items(pick_vcg_id_set3, items3);
+            adjust_interposer_left(items3);
+            child3->get_grid_bottoms(pick_vcg_id_set3);
+            pick_new3->get_items(pick_vcg_id_set3, items3);
+            adjust_interposer_bottom(items3);
+
+            for (auto pick4 : child4->get_picks())
+            {
+              if (is_pick_repeat(pick0, pick1) || is_pick_repeat(pick1, pick2) || is_pick_repeat(pick2, pick3) || is_pick_repeat(pick3, pick4) || is_pick_repeat(pick0, pick2) || is_pick_repeat(pick0, pick3) || is_pick_repeat(pick1, pick3) || is_pick_repeat(pick0, pick4) || is_pick_repeat(pick1, pick4) || is_pick_repeat(pick2, pick4))
+                continue;
+
+              PickHelper *pick_new4 = new PickHelper(pick4);
+
+              // interposer
+              child4->get_grid_bottoms(pick_vcg_id_set4);
+              pick_new4->get_items(pick_vcg_id_set4, items4);
+              adjust_interposer_bottom(items4);
+
+              // update top box
+              get_helper_box(pick_new4, box);
+              pick_new4->set_box(box);
+
+              child4->get_grid_lefts(pick_vcg_id_set4);
+              pick_new4->get_items(pick_vcg_id_set4, items4);
+
+              Point range;
+              get_box_range_fit_litems(items4, items3, pick_new0->get_box()._c3._x, range);
+              int x_move = range._x;
+              if (range._x > range._y)
+              {
+                x_move = range._y;
+
+                g_log << "[HRZ merging violate] occur in pt_node = "
+                      << std::to_string(pt_node->get_pt_id())
+                      << "range.min_x = " << range._x << ", "
+                      << "range.max_x = " << range._y << "\n";
+              }
+
+              for (auto r_item : pick_new4->get_items())
+              {
+                r_item->_c1_y += x_move;
+              }
+              PickHelper *new_helper = new PickHelper(pick_new0, pick_new1, pick_new2, pick_new3, pick_new4);
+
+              get_helper_box(new_helper, box);
+              new_helper->set_box(box);
+              int cell_area = get_cells_area(new_helper);
+              new_helper->set_death(1.0 * (box.get_area() - cell_area) / box.get_area());
+
+              // debug
+              // debug_GDS(new_helper);
+
+              if (!insert_death_que(death_queue, new_helper))
+              {
+                delete new_helper;
+              }
+              delete pick_new4;
+            }
+            delete pick_new3;
+          }
+          delete pick_new2;
+        }
+        delete pick_new1;
+      }
+      delete pick_new0;
+    }
+  }
+}
+
+ PickHelper::PickHelper(PickHelper *h1, PickHelper *h2, PickHelper *h3, PickHelper *h4, PickHelper *h5)
+{
+  ASSERT(h1 && h2 && h3 && h4 && h5, "Please enter valid data");
+
+  for (auto item : h1->get_items())
+  {
+    _items.push_back(new PickItem(*item));
+  }
+  for (auto item : h2->get_items())
+  {
+    _items.push_back(new PickItem(*item));
+  }
+  for (auto item : h3->get_items())
+  {
+    _items.push_back(new PickItem(*item));
+  }
+  for (auto item : h4->get_items())
+  {
+    _items.push_back(new PickItem(*item));
+  }
+  for (auto item : h5->get_items())
+  {
+    _items.push_back(new PickItem(*item));
+  }
+  for (auto item : _items)
+  {
+    _id_item_map[item->_vcg_id] = item;
+  }
+}
+
+// <<<<<<<
+
 
 }  // namespace  EDA_CHALLENGE_Q4
