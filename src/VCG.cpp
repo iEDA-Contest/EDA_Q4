@@ -6,7 +6,7 @@
 namespace EDA_CHALLENGE_Q4 {
 
 size_t VCG::_gds_file_num = 0;
-static constexpr size_t max_combination = 20;
+static constexpr size_t max_combination = 80;
 
 VCG::VCG(Token_List& tokens) : _cm(nullptr), _cst(nullptr), _helper(nullptr) {
   _adj_list.push_back(new VCGNode(kVCG_END));
@@ -1286,17 +1286,17 @@ void PatternTree::merge_vtc(PTNode* pt_node) {
 bool PatternTree::insert_death_que(DeathQue& queue, PickHelper* helper) {
   if (!helper) return true;
 
-  bool repreat = false;
-  DeathQue tmp;
-  while (queue.size()) {
-    auto top = queue.top();
-    queue.pop();
-    tmp.push(top);
+  // bool repreat = false;
+  // DeathQue tmp;
+  // while (queue.size()) {
+  //   auto top = queue.top();
+  //   queue.pop();
+  //   tmp.push(top);
 
-    repreat |= is_pick_same(top, helper);
-  }
-  queue.swap(tmp);
-  if (repreat) return false;
+  //   repreat |= is_pick_same(top, helper);
+  // }
+  // queue.swap(tmp);
+  // if (repreat) return false;
 
   // choose minimal death
   if (queue.size() < max_combination) {

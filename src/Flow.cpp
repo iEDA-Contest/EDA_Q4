@@ -103,13 +103,14 @@ void Flow::doTaskFloorplan() {
     // // !!!!! floorplan >>>>> !!!!!
     g.find_best_place();
     // // !!!!! <<<<< floorplan !!!!!
-    // g.gen_GDS();
+    g.gen_GDS();
 
     _parser->reset_tokens();
 
     // do cell movement.
-    CellMovement* cell_move = new CellMovement(&g);
-    cell_move->executeCellMovement();
+    // CellMovement* cell_move = new CellMovement(&g);
+    // cell_move->executeCellMovement();
+    // delete cell_move;
 
     ++g._gds_file_num;
     g.gen_result();
